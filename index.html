@@ -45,7 +45,12 @@
     display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:8px;
     transition:transform .1s,border-color .1s; }
   .card:hover,.card:active { transform:translateY(-6px) scale(1.03); border-color:#ffd77a; }
-  .card.evo { border-color:#ffd77a; background:linear-gradient(180deg,#6b4b12,#4a3208); }
+  .card.evo { border-color:#ffd77a; background:linear-gradient(180deg,#6b4b12,#4a3208);
+    animation:evoGlow 1.6s ease-in-out infinite; }
+  @keyframes evoGlow {
+    0%,100% { box-shadow:0 0 14px rgba(255,215,122,0.35); }
+    50% { box-shadow:0 0 32px rgba(255,215,122,0.8); }
+  }
   .card .icon { font-size:clamp(30px,7vw,44px); }
   .card .name { font-size:clamp(15px,3.6vw,19px); font-weight:800; color:#ffe9a8; }
   .card .desc { font-size:clamp(11px,2.8vw,13px); color:#cbbdf0; line-height:1.5; }
@@ -81,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.6</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.7</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -165,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.6');
+LOG.info('游戏脚本加载完成 v0.7');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -519,6 +524,52 @@ function drawSprite(x, y, scale, bodyColor, headColor, opts) {
     ctx.beginPath(); ctx.moveTo(x + 9 * scale, y - 36 * scale); ctx.lineTo(x + 4 * scale, y - 32 * scale);
     ctx.lineTo(x + 11 * scale, y - 30 * scale); ctx.closePath(); ctx.fill();
   }
+  // ---- 造型差异化（纯代码"捏脸"，每种角色/怪一眼可辨）----
+  const ty = opts.type;
+  if (ty === 'player') {
+    // 玩家：小披风 + 手持短剑（披风用深藏青，跟蓝衣服拉开对比度）
+    ctx.fillStyle = '#141c52';
+    ctx.beginPath(); ctx.moveTo(x - 7 * s, y - 19 * s); ctx.lineTo(x - 17 * s, y - 1 * s); ctx.lineTo(x - 3 * s, y - 10 * s); ctx.closePath(); ctx.fill();
+    ctx.save(); ctx.translate(x + 12 * s, y - 14 * s); ctx.rotate(-0.5);
+    ctx.fillStyle = '#dfe6ff'; roundRect(-1.6 * s, -11 * s, 3.2 * s, 15 * s, 1.5 * s); ctx.fill();
+    ctx.fillStyle = '#8a6a2e'; ctx.fillRect(-4 * s, 3 * s, 8 * s, 2.4 * s); // 剑格
+    ctx.restore();
+  } else if (ty === 'fast') {
+    // 速怪：尖耳（速度感）
+    ctx.fillStyle = headColor;
+    ctx.beginPath(); ctx.moveTo(x - 10 * s, y - 35 * s); ctx.lineTo(x - 5 * s, y - 31 * s); ctx.lineTo(x - 12 * s, y - 28 * s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 10 * s, y - 35 * s); ctx.lineTo(x + 5 * s, y - 31 * s); ctx.lineTo(x + 12 * s, y - 28 * s); ctx.closePath(); ctx.fill();
+  } else if (ty === 'ranged') {
+    // 弹怪：兜帽 + 独眼罩（法师味）
+    ctx.fillStyle = 'rgba(30,20,60,0.85)';
+    ctx.beginPath(); ctx.arc(x, y - 30 * s, 12.5 * s, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x - 12.5 * s, y - 31 * s, 25 * s, 3.5 * s);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x + eo - 1 * s, y - 30.5 * s, 6.5 * s, 2.6 * s);
+  } else if (ty === 'elite') {
+    // 精英：怒眉 + 肩甲铆钉
+    ctx.strokeStyle = '#5a0e22'; ctx.lineWidth = 2.2 * s;
+    ctx.beginPath(); ctx.moveTo(x + eo - 6.5 * s, y - 33.5 * s); ctx.lineTo(x + eo - 1.5 * s, y - 31.5 * s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + eo + 6.5 * s, y - 33.5 * s); ctx.lineTo(x + eo + 1.5 * s, y - 31.5 * s); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,215,150,0.85)';
+    ctx.beginPath(); ctx.arc(x - 10 * s, y - 17 * s, 3.2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 10 * s, y - 17 * s, 3.2 * s, 0, Math.PI * 2); ctx.fill();
+  } else if (ty === 'gold') {
+    // 金怪：小皇冠（财宝感）
+    ctx.fillStyle = '#ffd75c';
+    ctx.beginPath();
+    ctx.moveTo(x - 8 * s, y - 37 * s); ctx.lineTo(x - 5 * s, y - 43 * s); ctx.lineTo(x - 2 * s, y - 37 * s);
+    ctx.lineTo(x, y - 44 * s); ctx.lineTo(x + 2 * s, y - 37 * s); ctx.lineTo(x + 5 * s, y - 43 * s);
+    ctx.lineTo(x + 8 * s, y - 37 * s); ctx.closePath(); ctx.fill();
+  } else if (ty === 'boss') {
+    // Boss：大披风 + 怒眉（压迫感）
+    ctx.fillStyle = '#4a0a1e';
+    ctx.beginPath(); ctx.moveTo(x - 13 * s, y - 24 * s); ctx.lineTo(x - 23 * s, y - 1 * s); ctx.lineTo(x - 5 * s, y - 13 * s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 13 * s, y - 24 * s); ctx.lineTo(x + 23 * s, y - 1 * s); ctx.lineTo(x + 5 * s, y - 13 * s); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#3a0814'; ctx.lineWidth = 2.6 * s;
+    ctx.beginPath(); ctx.moveTo(x - 7 * s, y - 34 * s); ctx.lineTo(x - 1.5 * s, y - 31.5 * s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 7 * s, y - 34 * s); ctx.lineTo(x + 1.5 * s, y - 31.5 * s); ctx.stroke();
+  }
 }
 // 圆角矩形辅助
 function roundRect(x, y, w, h, r) {
@@ -552,6 +603,18 @@ groundTile.width = 128; groundTile.height = 64;
     g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.fill();
     g.fillStyle = 'rgba(170,140,255,0.30)';
     g.beginPath(); g.arc(px, py, 1.4, 0, Math.PI * 2); g.fill();
+  }
+  // 散落装饰：交叉小骨头
+  for (let i = 0; i < 3; i++) {
+    const bx = Math.random() * 118 + 5, by = Math.random() * 54 + 5;
+    g.strokeStyle = 'rgba(220,210,255,0.17)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(bx - 3, by - 2); g.lineTo(bx + 3, by + 2); g.moveTo(bx - 3, by + 2); g.lineTo(bx + 3, by - 2); g.stroke();
+  }
+  // 散落装饰：水晶碎片
+  for (let i = 0; i < 2; i++) {
+    const qx = Math.random() * 120 + 4, qy = Math.random() * 56 + 4;
+    g.fillStyle = 'rgba(120,200,255,0.16)';
+    g.beginPath(); g.moveTo(qx, qy - 5); g.lineTo(qx + 3, qy + 2); g.lineTo(qx - 3, qy + 2); g.closePath(); g.fill();
   }
 })();
 
@@ -604,6 +667,8 @@ function spawnEnemy(type, x, y) {
     burstCd: 3, dead: false,
   });
   if (type === 'boss') game.boss = enemies[enemies.length - 1];
+  // 出生黑雾：怪物从雾里浮现（普通怪概率触发省粒子）
+  if (type !== 'normal' || Math.random() < 0.35) addParticles(x, y - 8, 'rgba(110,75,180,0.75)', 4, 55);
 }
 
 // 刷怪调度：密度随时间提升，每3分钟小台阶
@@ -1218,6 +1283,18 @@ function render() {
   // 世界坐标 → 屏幕坐标
   const wx = x => x - camX, wy = y => y - camY;
 
+  // ---- 漂浮雾气层（半透明雾团缓慢漂移，氛围组）----
+  const tFog = performance.now() / 1000;
+  for (let i = 0; i < 3; i++) {
+    const fx = ((W * (0.22 + 0.31 * i) + tFog * (12 + i * 7)) % (W + 400)) - 200;
+    const fy = H * (0.28 + 0.24 * i) + Math.sin(tFog * 0.12 + i * 1.9) * 70;
+    const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, 210);
+    fg.addColorStop(0, 'rgba(125,95,195,0.10)');
+    fg.addColorStop(1, 'rgba(125,95,195,0)');
+    ctx.fillStyle = fg;
+    ctx.fillRect(fx - 210, fy - 210, 420, 420);
+  }
+
   // ---- 毒圈（地面效果，画在实体下方）----
   for (const id in player.weapons) {
     const w = player.weapons[id];
@@ -1271,7 +1348,7 @@ function render() {
       // 玩家：走路弹跳 + 受击闪白/无敌闪烁
       const bob = Math.abs(Math.sin(player.walkT)) * 3;
       if (player.iframe > 0 && Math.floor(player.iframe * 12) % 2 === 0) ctx.globalAlpha = 0.55;
-      drawSprite(wx(player.x), wy(player.y) - bob, 1.15, '#3f6fe8', '#ffd9b0', { facing: player.facing });
+      drawSprite(wx(player.x), wy(player.y) - bob, 1.15, '#3f6fe8', '#ffd9b0', { facing: player.facing, type: 'player' });
       ctx.globalAlpha = 1;
     } else {
       const e = d.e;
@@ -1284,7 +1361,9 @@ function render() {
         ctx.beginPath(); ctx.ellipse(wx(e.x), wy(e.y), e.r * 1.35, e.r * 0.65, 0, 0, Math.PI * 2); ctx.stroke();
       }
       if (e.flash > 0) ctx.globalAlpha = 0.75;
-      drawSprite(wx(e.x), wy(e.y), e.scale, e.body, e.head, { facing: 1, horns: e.horns, hornColor: '#ffe9c9' });
+      // 行走摇摆：相位取自坐标，群怪动作不同步，看起来更活
+      const bobE = Math.abs(Math.sin(performance.now() / 260 + e.x * 0.04 + e.y * 0.03)) * 2.2 * e.scale;
+      drawSprite(wx(e.x), wy(e.y) - bobE, e.scale, e.body, e.head, { facing: 1, horns: e.horns, hornColor: '#ffe9c9', type: e.type });
       ctx.globalAlpha = 1;
       // 精英/Boss 血条
       if (e.type === 'elite' || e.type === 'boss') {
@@ -1421,9 +1500,14 @@ function render() {
 // HUD：血条/经验条/计时/击杀/金币/武器栏
 function renderHud() {
   const pad = 14, barW = Math.min(320, W * 0.42);
-  // 经验条（顶部通栏）
+  // 经验条（顶部通栏 + 流光扫过）
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, 12);
-  ctx.fillStyle = '#5cc8ff'; ctx.fillRect(0, 0, W * clamp(game.xp / game.xpNeed, 0, 1), 12);
+  const xpW = W * clamp(game.xp / game.xpNeed, 0, 1);
+  ctx.fillStyle = '#5cc8ff'; ctx.fillRect(0, 0, xpW, 12);
+  const shineX = (performance.now() / 12) % (W + 200) - 100;
+  const sg = ctx.createLinearGradient(shineX - 60, 0, shineX + 60, 0);
+  sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.5, 'rgba(255,255,255,0.35)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, xpW, 12); // 流光只扫经验范围内
   // 血条
   const hx = pad, hy = 22;
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(hx, hy, barW, 18, 9); ctx.fill();
