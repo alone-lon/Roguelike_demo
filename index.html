@@ -60,6 +60,9 @@
   #shopClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30;
     width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35);
     background:rgba(60,30,80,0.9); color:#fff; font-size:18px; cursor:pointer; }
+  #audioBtn { position:fixed; top:10px; top:calc(10px + env(safe-area-inset-top)); right:66px; z-index:16;
+    width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35);
+    background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }
   #pauseBtn { position:fixed; top:10px; top:calc(10px + env(safe-area-inset-top)); right:12px; z-index:15;
     width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35);
     background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }
@@ -71,13 +74,14 @@
 <!-- 游戏画布（画面全部由 Canvas 代码绘制） -->
 <canvas id="game"></canvas>
 
-<!-- 暂停按钮 -->
+<!-- 暂停按钮 + 静音开关 -->
+<button id="audioBtn" title="静音开关">🔊</button>
 <button id="pauseBtn" class="hidden">⏸</button>
 
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.4.2</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.5</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -161,7 +165,116 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.4.2');
+LOG.info('游戏脚本加载完成 v0.5');
+
+// ============================== 音效系统（Web Audio 程序合成） ==============================
+// 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
+const AudioSys = {
+  ctx: null, master: null, muted: false, last: {}, bgmNext: 0, bgmStep: 0, timer: null,
+  // 初始化音频上下文（在用户手势内调用，如开始游戏点击）
+  init() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.connect(this.ctx.destination);
+      this.muted = save.settings.muted; // 恢复静音记忆
+    }
+    this.master.gain.value = this.muted ? 0 : 0.55;
+    if (this.ctx.state === 'suspended') this.ctx.resume(); // 解除自动播放限制
+  },
+  // 基础合成音：振荡器 + 音量包络（slideTo 实现滑音）
+  tone(freq, dur, type, vol, slideTo, when) {
+    if (!this.ctx) return;
+    const t = when || this.ctx.currentTime;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type || 'triangle';
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  // 基础合成噪声：打击/爆破的质感来源
+  noise(dur, vol, filterFreq, when) {
+    if (!this.ctx) return;
+    const t = when || this.ctx.currentTime;
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = filterFreq || 1200;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + dur + 0.02);
+  },
+  // 音效入口（带限频：怪海刷屏时高频音不糊成噪音）
+  play(name) {
+    if (!this.ctx || this.muted) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const now = performance.now();
+    const minGap = { hit: 80, pop: 80, shoot: 100, coin: 60 }[name] || 0;
+    if (this.last[name] && now - this.last[name] < minGap) return;
+    this.last[name] = now;
+    const T = this.ctx.currentTime;
+    switch (name) {
+      case 'shoot': this.tone(720, 0.06, 'square', 0.022, 420); break;
+      case 'hit':   this.noise(0.05, 0.03, 1800); break;
+      case 'pop':   this.tone(220, 0.09, 'triangle', 0.055, 90); break;
+      case 'coin':  this.tone(1180, 0.06, 'square', 0.045); this.tone(1560, 0.09, 'square', 0.045, null, T + 0.06); break;
+      case 'levelup': [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.12, 'triangle', 0.075, null, T + i * 0.09)); break;
+      case 'evolve':
+        [262, 330, 392, 523, 659, 784].forEach((f, i) => this.tone(f, 0.5, 'sawtooth', 0.045, null, T + i * 0.07));
+        this.noise(0.5, 0.07, 900);
+        break;
+      case 'hurt':  this.tone(170, 0.16, 'sawtooth', 0.1, 70); this.noise(0.12, 0.06, 700); break;
+      case 'boss':  this.tone(110, 0.5, 'sawtooth', 0.11, 85); this.tone(110, 0.5, 'sawtooth', 0.11, 85, T + 0.55); break;
+      case 'bomb':  this.noise(0.55, 0.14, 500); this.tone(90, 0.5, 'sine', 0.11, 40); break;
+      case 'chest': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.14, 'triangle', 0.065, null, T + i * 0.08)); break;
+    }
+  },
+  // ---- BGM：合成器循环，三档紧张度随游戏时间切换 ----
+  startBgm() {
+    if (this.timer || !this.ctx) return;
+    this.bgmNext = this.ctx.currentTime + 0.1;
+    this.bgmStep = 0;
+    this.timer = setInterval(() => this.scheduleBgm(), 120);
+  },
+  scheduleBgm() {
+    if (!this.ctx) return;
+    const T = this.ctx.currentTime;
+    while (this.bgmNext < T + 0.35) {
+      const step = this.bgmStep, t = this.bgmNext;
+      const stage = game.time < 180 ? 0 : (game.time < 480 ? 1 : 2); // 热身/怪海/地狱
+      const bassSeq = [110, 110, 130.8, 110, 98, 98, 130.8, 164.8]; // A小调低音律动
+      if (!this.muted) {
+        if (step % 2 === 0) this.tone(bassSeq[(step / 2) % 8], 0.22, 'triangle', 0.07, null, t);
+        if (stage >= 1 && step % 2 === 1) this.noise(0.03, 0.018, 6000, t); // 怪海起：踩镲
+        if (step % 8 === 0) [220, 261.6, 329.6].forEach(f => this.tone(f, 1.6, 'sine', 0.026, null, t)); // 铺底和弦
+        if (stage >= 2 && step % 2 === 0) { // 地狱档：高音琶音加压
+          const arp = [440, 523, 659, 784];
+          this.tone(arp[(step / 2) % 4], 0.12, 'square', 0.016, null, t);
+        }
+      }
+      this.bgmStep++;
+      this.bgmNext += 0.216; // ≈139BPM 八分音符
+    }
+  },
+  // 静音开关（记忆到存档）
+  toggleMute() {
+    this.muted = !this.muted;
+    save.settings.muted = this.muted;
+    writeSave();
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.55;
+    return this.muted;
+  },
+};
 
 // ============================== 基础设施 ==============================
 const canvas = document.getElementById('game');
@@ -269,12 +382,14 @@ function writeSave() {
       coins: game.coins,
       records: save.records, // 最高存活/击杀/伤害纪录
       meta: save.meta,       // 局外永久属性等级
+      settings: save.settings, // 设置项（静音记忆）——漏掉这个字段会导致静音不持久
     }));
   } catch (e) { /* 隐私模式下存储失败不影响游戏 */ }
 }
 const save = loadSave();
 save.records = save.records || { time: 0, kills: 0, damage: 0 };
 save.meta = save.meta || { dmg: 0, hp: 0, moveSpeed: 0, pickup: 0, cdr: 0, xpBonus: 0 }; // 局外属性存档
+save.settings = save.settings || { muted: false }; // 设置项（静音记忆）
 game.coins = save.coins || 0; // 关键修复：金币回填（之前重开会丢档被覆盖）
 
 // ============================== 输入层 ==============================
@@ -488,6 +603,7 @@ function updateSpawner(dt) {
     game.bossSpawned = true;
     spawnEnemy('boss');
     game.flashT = 1.2; shake(18, 0.8); // 红屏警告
+    AudioSys.play('boss');
     addDmgText(player.x, player.y - 60, '最终BOSS 降临！', '#ff5566', 26);
   }
   // 16分钟仍未击杀Boss也算存活通关
@@ -515,6 +631,7 @@ function updateWeapons(dt) {
         const target = nearestEnemy();
         if (target) {
           w.cd = interval;
+          AudioSys.play('shoot');
           let count = 1 + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0);
           let spread = 0.18, pierce = 0;
           if (w.evolved) { count += 3; spread = 0.28; pierce = 1; } // 进化：暗影箭雨
@@ -741,6 +858,7 @@ function damageEnemy(e, dmg) {
   if (e.dead) return;
   e.hp -= dmg; e.flash = 0.12;
   if (Math.random() < 0.5) addParticles(e.x, e.y - e.r, '#fff', 2, 90); // 命中火花（概率触发省性能）
+  AudioSys.play('hit');
   game.damage += dmg;
   addDmgText(e.x, e.y - e.r * 1.6, Math.round(dmg), dmg > 40 ? '#ffd77a' : '#fff', dmg > 40 ? 20 : 15);
   if (e.hp <= 0) killEnemy(e);
@@ -751,6 +869,7 @@ function killEnemy(e) {
   game.kills++;
   // 连杀系统：持续击杀累积连杀数，屏幕中央跳大字
   game.combo++; game.comboT = 2.5; game.comboScale = 1;
+  AudioSys.play('pop');
   addParticles(e.x, e.y - 10, e.head, e.type === 'boss' ? 60 : 10, e.type === 'boss' ? 320 : 150);
   if (e.type === 'boss') {
     shake(20, 1); game.flashT = 0.8;
@@ -777,6 +896,7 @@ function damagePlayer(dmg) {
   if (player.iframe > 0 || game.state !== 'playing') return;
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
+  AudioSys.play('hurt');
   shake(9, 0.3);
   addDmgText(player.x, player.y - 40, '-' + Math.round(dmg), '#ff6b6b', 20);
   game.flashT = Math.max(game.flashT, 0.25);
@@ -840,6 +960,7 @@ function applyOption(opt) {
     const w = player.weapons[opt.ev.weapon];
     w.evolved = true;
     LOG.info('超武进化：' + opt.ev.name);
+    AudioSys.play('evolve');
     addDmgText(player.x, player.y - 60, '超武觉醒！' + opt.ev.name, '#ffd77a', 26);
     game.flashT = 0.6; shake(12, 0.5);
   } else if (opt.type === 'newWeapon') giveWeapon(opt.id);
@@ -852,6 +973,7 @@ function applyOption(opt) {
 function openLevelUp() {
   game.state = 'levelup';
   joyReset(); // 界面切换重置摇杆，防止触摸状态残留
+  AudioSys.play('levelup');
   addParticles(player.x, player.y - 20, '#ffe9a8', 26, 260); // 升级金光粒子爆发
   const cards = document.getElementById('levelupCards');
   cards.innerHTML = '';
@@ -906,12 +1028,13 @@ function updateDrops(dt) {
       else if (d.type === 'magnet') { for (const g of gems) { g.x = player.x; g.y = player.y; } addDmgText(player.x, player.y - 40, '全屏吸取！', '#7de6ff', 18); }
       else if (d.type === 'bomb') {
         shake(16, 0.6); game.flashT = 0.5;
+        AudioSys.play('bomb');
         addParticles(player.x, player.y, '#ffd77a', 40, 380);
         for (const e of enemies) if (!e.dead && e.type !== 'boss') damageEnemy(e, 9999);
         addDmgText(player.x, player.y - 40, '清屏炸弹！', '#ffd77a', 22);
       }
-      else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); game.pendingLevels++; if (game.state === 'playing') openLevelUp(); }
-      else if (d.type === 'coin') { game.coins += 1; game.coinPulse = 1; addParticles(d.x, d.y, '#ffd77a', 4, 120); } // 金币拾取闪光
+      else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); AudioSys.play('chest'); game.pendingLevels++; if (game.state === 'playing') openLevelUp(); }
+      else if (d.type === 'coin') { game.coins += 1; game.coinPulse = 1; addParticles(d.x, d.y, '#ffd77a', 4, 120); AudioSys.play('coin'); } // 金币拾取闪光+音
     }
   }
 }
@@ -999,6 +1122,7 @@ function startGame() {
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; joyReset();
+  AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   minions = []; zaps = []; fireZones = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
@@ -1459,6 +1583,13 @@ function closeShop() {
 }
 document.getElementById('shopBack').addEventListener('click', closeShop);
 document.getElementById('shopClose').addEventListener('click', closeShop);
+document.getElementById('audioBtn').addEventListener('click', () => {
+  // 静音开关：点击也算用户手势，顺手 init
+  AudioSys.init();
+  const m = AudioSys.toggleMute();
+  document.getElementById('audioBtn').textContent = m ? '🔇' : '🔊';
+  LOG.info(m ? '已静音' : '取消静音');
+});
 
 function showMenu() {
   game.state = 'menu';
@@ -1469,6 +1600,11 @@ function showMenu() {
   document.getElementById('pauseBtn').classList.add('hidden');
 }
 showMenu();
+document.getElementById('audioBtn').textContent = save.settings.muted ? '🔇' : '🔊'; // 同步静音记忆
+AudioSys.muted = save.settings.muted; // 启动即同步静音状态
+// 音频解锁保险：任何首次触摸/点击都尝试 init（部分手机 webview 对手势解锁挑剔）
+document.addEventListener('touchstart', () => AudioSys.init(), { once: true, passive: true });
+document.addEventListener('click', () => AudioSys.init(), { once: true });
 
 // 切后台自动暂停（用状态冻结实现）
 document.addEventListener('visibilitychange', () => {
