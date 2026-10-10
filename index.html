@@ -67,7 +67,7 @@
   <div class="title">暗黑幸存者</div>
   <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽</div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
-  <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割</div>
+  <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
 </div>
 
@@ -98,6 +98,38 @@
  *   4) 渲染层：drawSprite() 素材槽位预留，当前纯代码画Q版小人
  *   5) 流程层：菜单 → 战斗 → 升级5选1 → 结算 → 无尽
  * ============================================================ */
+
+// ============================== 日志系统 ==============================
+// 运行日志：环形缓冲存 localStorage，按 L 键导出 txt，方便排查线上问题
+const LOG = {
+  buf: [], max: 300, key: 'roguelike_demo_log_v1',
+  push(level, msg) {
+    const line = `[${new Date().toLocaleString('zh-CN')}] [${level}] ${msg}`;
+    this.buf.push(line);
+    if (this.buf.length > this.max) this.buf.shift(); // 环形缓冲，最多300条
+    try { localStorage.setItem(this.key, this.buf.join('\n')); } catch (e) { /* 隐私模式忽略 */ }
+  },
+  info(msg) { this.push('INFO', msg); },
+  warn(msg) { this.push('WARN', msg); },
+  error(msg) { this.push('ERROR', msg); },
+  // 导出日志文件（游戏中按 L 键触发）
+  download() {
+    const blob = new Blob([this.buf.join('\n') || '(日志为空)'], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'roguelike-game-log.txt';
+    a.click();
+    this.info('日志已导出');
+  },
+};
+// 启动时恢复历史日志，并挂全局错误钩子（自动捕获报错）
+try {
+  const hist = localStorage.getItem(LOG.key);
+  if (hist) LOG.buf = hist.split('\n').slice(-LOG.max);
+} catch (e) { /* 忽略 */ }
+window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
+LOG.info('游戏脚本加载完成');
 
 // ============================== 基础设施 ==============================
 const canvas = document.getElementById('game');
@@ -195,6 +227,7 @@ window.addEventListener('keydown', e => {
     const card = document.querySelectorAll('#levelupCards .card')[+e.key - 1];
     if (card) card.click();
   }
+  if (e.key.toLowerCase() === 'l') LOG.download(); // L键导出运行日志
   if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -612,6 +645,7 @@ function applyOption(opt) {
   if (opt.type === 'evolution') {
     const w = player.weapons[opt.ev.weapon];
     w.evolved = true;
+    LOG.info('超武进化：' + opt.ev.name);
     addDmgText(player.x, player.y - 60, '超武觉醒！' + opt.ev.name, '#ffd77a', 26);
     game.flashT = 0.6; shake(12, 0.5);
   } else if (opt.type === 'newWeapon') giveWeapon(opt.id);
@@ -770,6 +804,7 @@ function startGame() {
   document.getElementById('settle').classList.add('hidden');
   document.getElementById('pauseBtn').classList.remove('hidden');
   spawnBudget = 0; specialCd = { elite: 30, gold: 45 };
+  LOG.info('开局：新一局开始');
 }
 
 function endRun(victoryFlag, endlessQuit) {
@@ -793,9 +828,13 @@ function endRun(victoryFlag, endlessQuit) {
 function victory() {
   if (game.endless) return; // 无尽模式下击杀Boss不结束
   game.flashT = 0.6;
+  LOG.info('通关！击杀Boss，存活 ' + fmtTime(game.time) + '，击杀 ' + game.kills);
   endRun(true, false);
 }
-function gameOver() { endRun(false, false); }
+function gameOver() {
+  LOG.info('死亡结算：存活 ' + fmtTime(game.time) + '，击杀 ' + game.kills + '，等级 ' + game.level);
+  endRun(false, false);
+}
 
 function fmtTime(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
