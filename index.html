@@ -202,6 +202,7 @@ const game = {
   shakeT: 0, shakeMag: 0, flashT: 0,
   combo: 0, comboT: 0, comboScale: 0, // 连杀计数/连杀计时/连杀跳字动画
   coinPulse: 0,                        // 金币拾取脉冲动画
+  pendingLevels: 0,                    // 连升排队数：每级都给一次5选1
 };
 window.__game = game; // 调试/测试挂点
 
@@ -245,35 +246,44 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
-// 移动端虚拟摇杆（左手按住屏幕左半边拖动）
+// 移动端虚拟摇杆（全屏任意位置按下即出摇杆：按下处即摇杆中心，哪里按哪里走）
 const joy = { active: false, id: null, baseX: 0, baseY: 0, dx: 0, dy: 0 };
-canvas.addEventListener('touchstart', e => {
+// 摇杆强制重置：界面切换时调用，防止上一次触摸状态残留导致"摇杆失灵"
+function joyReset() { joy.active = false; joy.id = null; joy.dx = joy.dy = 0; }
+// 判断触摸点是否落在 UI 元素上（按钮/卡片等），UI 触摸要留给点击事件，不能被摇杆抢走
+function isUITouch(t) {
+  const el = document.elementFromPoint(t.clientX, t.clientY);
+  return !!(el && el.closest && el.closest('button, .card'));
+}
+// 监听挂 window 而不是 canvas：覆盖整屏（含边缘区域），修复"只有屏幕中间能按出摇杆"
+window.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
-    if (t.clientX < W * 0.6 && !joy.active) { // 左侧60%区域激活摇杆
+    // 只在游戏进行中 + 非UI区域 + 摇杆空闲时激活，全屏皆可按
+    if (!joy.active && game.state === 'playing' && !isUITouch(t)) {
       joy.active = true; joy.id = t.identifier;
       joy.baseX = t.clientX; joy.baseY = t.clientY; joy.dx = joy.dy = 0;
+      e.preventDefault();
     }
   }
-  e.preventDefault();
 }, { passive: false });
-canvas.addEventListener('touchmove', e => {
+window.addEventListener('touchmove', e => {
   for (const t of e.changedTouches) {
     if (t.identifier === joy.id) {
       // 摇杆向量，最大半径60px
       const dx = t.clientX - joy.baseX, dy = t.clientY - joy.baseY;
       const d = Math.hypot(dx, dy) || 1, cap = Math.min(d, 60);
       joy.dx = dx / d * cap; joy.dy = dy / d * cap;
+      e.preventDefault();
     }
   }
-  e.preventDefault();
 }, { passive: false });
 function joyEnd(e) {
   for (const t of e.changedTouches) {
-    if (t.identifier === joy.id) { joy.active = false; joy.id = null; joy.dx = joy.dy = 0; }
+    if (t.identifier === joy.id) joyReset();
   }
 }
-canvas.addEventListener('touchend', joyEnd);
-canvas.addEventListener('touchcancel', joyEnd);
+window.addEventListener('touchend', joyEnd);
+window.addEventListener('touchcancel', joyEnd);
 
 // ============================== 工具函数 ==============================
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -619,8 +629,9 @@ function addXp(v) {
     game.xp -= game.xpNeed;
     game.level++;
     game.xpNeed = CONFIG.xpNeed(game.level);
-    openLevelUp();
+    game.pendingLevels++; // 连升排队：保证每级都给一次5选1（修复连升只弹一次的bug）
   }
+  if (game.pendingLevels > 0 && game.state === 'playing') openLevelUp();
 }
 
 // 生成升级5选1选项（进化选项优先置顶）
@@ -678,6 +689,7 @@ function applyOption(opt) {
 
 function openLevelUp() {
   game.state = 'levelup';
+  joyReset(); // 界面切换重置摇杆，防止触摸状态残留
   addParticles(player.x, player.y - 20, '#ffe9a8', 26, 260); // 升级金光粒子爆发
   const cards = document.getElementById('levelupCards');
   cards.innerHTML = '';
@@ -690,8 +702,14 @@ function openLevelUp() {
       `<div class="desc">${info.desc}</div><div class="tag">${opt.tag}　[${i + 1}]</div>`;
     div.addEventListener('click', () => {
       applyOption(opt);
-      document.getElementById('levelup').classList.add('hidden');
-      game.state = 'playing';
+      game.pendingLevels = Math.max(0, game.pendingLevels - 1); // 消化一级连升
+      joyReset(); // 关键修复：选完技能强制重置摇杆，解决"摇杆点不出来"
+      if (game.pendingLevels > 0) {
+        openLevelUp(); // 还有连升：继续弹下一轮5选1
+      } else {
+        document.getElementById('levelup').classList.add('hidden');
+        game.state = 'playing';
+      }
     });
     cards.appendChild(div);
   });
@@ -730,7 +748,7 @@ function updateDrops(dt) {
         for (const e of enemies) if (!e.dead && e.type !== 'boss') damageEnemy(e, 9999);
         addDmgText(player.x, player.y - 40, '清屏炸弹！', '#ffd77a', 22);
       }
-      else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); openLevelUp(); }
+      else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); game.pendingLevels++; if (game.state === 'playing') openLevelUp(); }
       else if (d.type === 'coin') { game.coins += 1; game.coinPulse = 1; addParticles(d.x, d.y, '#ffd77a', 4, 120); } // 金币拾取闪光
     }
   }
@@ -818,6 +836,7 @@ function startGame() {
   game.endless = false; game.bossSpawned = false; game.boss = null;
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
+  game.pendingLevels = 0; joyReset();
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
@@ -1178,6 +1197,7 @@ document.getElementById('quitBtn').addEventListener('click', () => {
 // 真暂停：状态机冻结游戏循环，弹出暂停面板
 function togglePause() {
   const panel = document.getElementById('pausePanel');
+  joyReset(); // 界面切换重置摇杆
   if (game.state === 'playing') { game.state = 'paused'; panel.classList.remove('hidden'); }
   else if (game.state === 'paused') { game.state = 'playing'; panel.classList.add('hidden'); }
 }
