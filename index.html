@@ -167,10 +167,14 @@ const CONFIG = {
 
 // 武器配置表（首发：暗黑系 + 圣骑系）
 const WEAPON_DEFS = {
-  arrow:  { name:'暗影箭',   icon:'🏹', desc:'自动射向最近的敌人' },
-  scythe: { name:'噬魂血镰', icon:'镰', desc:'血镰环绕自身旋转' },
-  poison: { name:'瘟疫毒环', icon:'☠', desc:'脚下扩散瘟疫毒圈' },
-  hammer: { name:'审判之锤', icon:'🔨', desc:'掷出回旋圣锤' },
+  arrow:    { name:'暗影箭',   icon:'🏹', desc:'自动射向最近的敌人' },
+  scythe:   { name:'噬魂血镰', icon:'镰', desc:'血镰环绕自身旋转' },
+  poison:   { name:'瘟疫毒环', icon:'☠', desc:'脚下扩散瘟疫毒圈' },
+  hammer:   { name:'审判之锤', icon:'🔨', desc:'掷出回旋圣锤' },
+  skeleton: { name:'骷髅召唤', icon:'💀', desc:'召唤小骷髅追击敌人' },
+  sword:    { name:'裁决飞剑', icon:'🗡', desc:'贯穿飞剑穿透敌阵' },
+  storm:    { name:'神圣风暴', icon:'⚡', desc:'闪电链打击周围敌人' },
+  holyfire: { name:'奉献圣火', icon:'🔥', desc:'脚下留下圣火区域' },
 };
 
 // 被动配置表（8项，兼做进化材料）
@@ -190,7 +194,11 @@ const EVOLUTIONS = [
   { weapon:'arrow',  passive:'atkSpeed', name:'暗影箭雨', icon:'🌠', desc:'箭矢化作漫天箭雨' },
   { weapon:'scythe', passive:'hp',       name:'亡者血镰', icon:'💀', desc:'血镰吸血并扩大范围' },
   { weapon:'poison', passive:'area',     name:'亡疫领域', icon:'🟢', desc:'毒雾扩散并减速敌人' },
-  { weapon:'hammer', passive:'dmg',      name:'圣光巨锤', icon:'☀', desc:'巨锤落地引发冲击波' },
+  { weapon:'hammer',   passive:'dmg',      name:'圣光巨锤', icon:'☀', desc:'巨锤落地引发冲击波' },
+  { weapon:'skeleton', passive:'cdr',      name:'骷髅军团', icon:'☠', desc:'骷髅数量翻倍强化' },
+  { weapon:'sword',    passive:'projSpeed', name:'万剑归宗', icon:'⚔', desc:'剑阵齐发无限穿透' },
+  { weapon:'storm',    passive:'moveSpeed', name:'天罚风暴', icon:'🌩', desc:'落雷范围数量大增' },
+  { weapon:'holyfire', passive:'pickup',    name:'炼狱圣域', icon:'🌋', desc:'圣火燎原持久灼烧' },
 ];
 
 // ============================== 游戏状态 ==============================
@@ -216,6 +224,7 @@ const player = {
 
 // 实体数组
 let enemies = [], bullets = [], eBullets = [], gems = [], drops = [], particles = [], dmgTexts = [];
+let minions = [], zaps = [], fireZones = []; // 召唤小骷髅 / 闪电链特效 / 圣火区域
 
 // ============================== 存档（localStorage） ==============================
 const SAVE_KEY = 'roguelike_demo_save_v1';
@@ -561,6 +570,75 @@ function updateWeapons(dt) {
         }
       }
     }
+
+    // ---- 骷髅召唤：召唤小骷髅追击敌人（进化：骷髅军团 数量翻倍）----
+    if (id === 'skeleton') {
+      const interval = 3.2 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        const n = 1 + Math.floor(lv / 2) + (w.evolved ? 2 : 0);
+        for (let i = 0; i < n; i++) {
+          const a = rand(0, Math.PI * 2);
+          minions.push({
+            x: player.x + Math.cos(a) * 30, y: player.y + Math.sin(a) * 30,
+            vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
+            dmg: weaponDmg(8, lv) * (w.evolved ? 1.3 : 1), life: 5, r: 12,
+          });
+        }
+      }
+    }
+
+    // ---- 裁决飞剑：贯穿飞剑（进化：万剑归宗 剑阵齐发）----
+    if (id === 'sword') {
+      const interval = 1.5 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        let count = 1 + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0);
+        let spread = 0.14, pierce = 3;
+        if (w.evolved) { count += 3; spread = 0.2; pierce = 99; } // 进化：无限穿透剑阵
+        const target = nearestEnemy();
+        const base = target ? Math.atan2(target.y - player.y, target.x - player.x) : (player.facing > 0 ? 0 : Math.PI);
+        for (let i = 0; i < count; i++) {
+          const a = base + (i - (count - 1) / 2) * spread;
+          bullets.push({
+            x: player.x, y: player.y - 12, vx: Math.cos(a) * 520 * player.projSpeedMult,
+            vy: Math.sin(a) * 520 * player.projSpeedMult, dmg: weaponDmg(16, lv) * (w.evolved ? 1.25 : 1),
+            r: 9, life: 1.2, pierce, type: 'sword',
+          });
+        }
+      }
+    }
+
+    // ---- 神圣风暴：闪电链打击最近敌人（进化：天罚风暴 范围数量大增）----
+    if (id === 'storm') {
+      const interval = 2.2 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        const range = 320 * player.areaMult * (w.evolved ? 1.5 : 1);
+        const targets = 2 + lv + (w.evolved ? 5 : 0);
+        // 范围内最近的N个敌人挨雷劈
+        const inRange = enemies.filter(e => !e.dead && dist2(e, player) < range * range)
+          .sort((a, b) => dist2(a, player) - dist2(b, player)).slice(0, targets);
+        for (const e of inRange) {
+          zaps.push({ x1: player.x, y1: player.y - 30, x2: e.x, y2: e.y - e.r, life: 0.18 });
+          damageEnemy(e, weaponDmg(9, lv) * (w.evolved ? 1.4 : 1));
+        }
+      }
+    }
+
+    // ---- 奉献圣火：脚下留下圣火区域（进化：炼狱圣域 火大持久）----
+    if (id === 'holyfire') {
+      const interval = 3.0 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        fireZones.push({
+          x: player.x, y: player.y,
+          r: (70 + lv * 6) * player.areaMult * (w.evolved ? 1.4 : 1),
+          life: w.evolved ? 7 : 5, tickCd: 0,
+          dmg: weaponDmg(3, lv) * 0.6 * (w.evolved ? 1.5 : 1),
+        });
+      }
+    }
   }
 }
 
@@ -573,6 +651,50 @@ function nearestEnemy() {
     if (d < bd) { bd = d; best = e; }
   }
   return best;
+}
+
+// 召唤物与地面区域更新：骷髅追敌、圣火灼烧、闪电特效衰减
+function updateSummons(dt) {
+  // 小骷髅：转向插值追踪最近敌人，接触伤害，寿命耗尽消散
+  for (let i = minions.length - 1; i >= 0; i--) {
+    const m = minions[i];
+    m.life -= dt;
+    if (m.life <= 0) { minions.splice(i, 1); continue; }
+    const target = nearestEnemy();
+    if (target) {
+      const dx = target.x - m.x, dy = target.y - m.y, d = Math.hypot(dx, dy) || 1;
+      // 转向插值（走弧线，比直冲更像活物）
+      m.vx += (dx / d * 220 - m.vx) * Math.min(1, dt * 5);
+      m.vy += (dy / d * 220 - m.vy) * Math.min(1, dt * 5);
+    }
+    m.x += m.vx * dt; m.y += m.vy * dt;
+    for (const e of enemies) {
+      if (e.dead || e.hitT.minion > 0) continue;
+      const er = e.r + m.r;
+      if ((e.x - m.x) ** 2 + (e.y - m.y) ** 2 < er * er) {
+        e.hitT.minion = 0.35;
+        damageEnemy(e, m.dmg);
+      }
+    }
+  }
+  // 圣火区域：0.5秒一跳灼烧区域内全部敌人
+  for (let i = fireZones.length - 1; i >= 0; i--) {
+    const z = fireZones[i];
+    z.life -= dt;
+    if (z.life <= 0) { fireZones.splice(i, 1); continue; }
+    z.tickCd -= dt;
+    if (z.tickCd <= 0) {
+      z.tickCd = 0.5;
+      for (const e of enemies) {
+        if (!e.dead && dist2(e, z) < (z.r + e.r) ** 2) damageEnemy(e, z.dmg);
+      }
+    }
+  }
+  // 闪电特效衰减
+  for (let i = zaps.length - 1; i >= 0; i--) {
+    zaps[i].life -= dt;
+    if (zaps[i].life <= 0) zaps.splice(i, 1);
+  }
 }
 
 // ============================== 伤害与击杀 ==============================
@@ -644,8 +766,8 @@ function generateOptions() {
       evos.push({ type: 'evolution', ev, tag: '超武进化' });
     }
   }
-  // 新武器（最多4把）
-  if (Object.keys(player.weapons).length < 4) {
+  // 新武器（全部武器都可进池）
+  if (Object.keys(player.weapons).length < Object.keys(WEAPON_DEFS).length) {
     for (const id in WEAPON_DEFS) if (!player.weapons[id]) others.push({ type: 'newWeapon', id, tag: '新武器' });
   }
   // 武器升级
@@ -838,6 +960,7 @@ function startGame() {
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; joyReset();
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
+  minions = []; zaps = []; fireZones = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
   giveWeapon('arrow'); // 初始武器：暗影箭
@@ -912,6 +1035,18 @@ function render() {
     }
   }
 
+  // ---- 圣火区域（地面效果，画在实体下方）----
+  for (const z of fireZones) {
+    const x = wx(z.x), y = wy(z.y);
+    const flicker = 0.85 + Math.sin(z.life * 8) * 0.15; // 火焰闪烁
+    const g = ctx.createRadialGradient(x, y, 0, x, y, z.r);
+    g.addColorStop(0, 'rgba(255,170,60,0.5)');
+    g.addColorStop(1, 'rgba(255,120,30,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(x, y, z.r * flicker, z.r * 0.7 * flicker, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,190,90,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
   // ---- 掉落物 & 宝石 ----
   for (const g of gems) {
     const x = wx(g.x), y = wy(g.y);
@@ -963,7 +1098,40 @@ function render() {
       roundRect(-10, -3, 20, 6, 3); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillRect(6, -2, 6, 4);
       ctx.restore();
+    } else if (b.type === 'sword') {
+      // 裁决飞剑：金色长剑形弹体
+      const a = Math.atan2(b.vy, b.vx);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.fillStyle = '#ffe9a8';
+      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(0, -5); ctx.lineTo(-14, 0); ctx.lineTo(0, 5); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(-4, -1.5, 10, 3);
+      ctx.restore();
     }
+  }
+  // 召唤小骷髅（Q版小圆头）
+  for (const m of minions) {
+    const x = wx(m.x), y = wy(m.y);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(x, y, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8e0ff';
+    ctx.beginPath(); ctx.arc(x, y - 10, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a2a5a';
+    ctx.beginPath(); ctx.arc(x - 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
+  }
+  // 神圣闪电链特效（折线抖动模拟闪电）
+  for (const z of zaps) {
+    const x1 = wx(z.x1), y1 = wy(z.y1), x2 = wx(z.x2), y2 = wy(z.y2);
+    const alpha = clamp(z.life * 5, 0, 1);
+    ctx.strokeStyle = `rgba(180,220,255,${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo((x1 + x2) / 2 + rand(-14, 14), (y1 + y2) / 2 + rand(-14, 14)); // 中段抖动
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.stroke();
   }
   // 环绕血镰
   for (const id in player.weapons) {
@@ -1079,8 +1247,11 @@ function renderHud() {
     ctx.fillText('+1', W - 70, 74 - (1 - game.coinPulse) * 22);
     ctx.restore();
   }
-  // 武器/被动栏（左下）
-  let ix = pad, iy = H - 46;
+  // 武器/被动栏（左下，窄屏整体缩放防溢出：8武器+8被动全开约700px宽）
+  const stripScale = Math.min(1, (W - 28) / 720);
+  ctx.save();
+  ctx.translate(pad, H - 46); ctx.scale(stripScale, stripScale);
+  let ix = 0, iy = 0;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const id in player.weapons) {
     const w = player.weapons[id];
@@ -1101,6 +1272,7 @@ function renderHud() {
     ctx.fillText('Lv' + player.passives[id], ix + 16, iy + 30);
     ix += 38;
   }
+  ctx.restore();
 }
 
 // ============================== 主循环 ==============================
@@ -1118,6 +1290,7 @@ function loop(now) {
     updatePlayer(dt);
     updateSpawner(dt);
     updateWeapons(dt);
+    updateSummons(dt); // 召唤物/圣火/闪电特效更新
     updateEnemies(dt);
     updateDrops(dt);
     // 子弹飞行
@@ -1125,10 +1298,12 @@ function loop(now) {
       const b = bullets[i];
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       let hit = false;
+      if (!b.hitSet) b.hitSet = new Set(); // 穿透去重：记录已命中的怪，防重复判定伤害
       for (const e of enemies) {
-        if (e.dead) continue;
+        if (e.dead || b.hitSet.has(e)) continue;
         const er = e.r + b.r;
         if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < er * er) {
+          b.hitSet.add(e);
           damageEnemy(e, b.dmg); hit = true;
           if (b.pierce > 0) b.pierce--; else break;
         }
