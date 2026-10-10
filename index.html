@@ -67,6 +67,7 @@
   <div class="title">暗黑幸存者</div>
   <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽</div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
+  <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
 </div>
@@ -96,6 +97,14 @@
     <button class="btn" id="resumeBtn">继 续 游 戏</button>
     <button class="btn sub" id="quitBtn">回 主 菜 单</button>
   </div>
+</div>
+
+<!-- 升级商店（局外永久属性，下局生效） -->
+<div id="shop" class="overlay hidden">
+  <div class="title" style="font-size:clamp(22px,5vw,40px)">升 级 商 店</div>
+  <div class="subtitle" id="shopCoins">金币：0　（属性下局生效）</div>
+  <div class="cards" id="shopItems"></div>
+  <button class="btn sub" id="shopBack">返 回</button>
 </div>
 
 <script>
@@ -164,6 +173,18 @@ const CONFIG = {
   enemyCap: 230,                                                   // 同屏怪物上限
   xpNeed: lv => Math.floor(5 + lv * 4 + lv * lv * 0.8),            // 升级经验曲线
 };
+
+// 局外永久属性表（金币商店，加属性=加一行）
+const META_DEFS = {
+  dmg:       { name:'攻击伤害', icon:'⚔', desc:'全局伤害 +5%/级', max:8, baseCost:50 },
+  hp:        { name:'生命上限', icon:'❤', desc:'初始生命 +15/级', max:8, baseCost:50 },
+  moveSpeed: { name:'移动速度', icon:'👟', desc:'移动速度 +3%/级', max:8, baseCost:60 },
+  pickup:    { name:'拾取范围', icon:'🧲', desc:'拾取范围 +10%/级', max:8, baseCost:40 },
+  cdr:       { name:'冷却缩减', icon:'⏱', desc:'武器冷却 -2%/级', max:8, baseCost:80 },
+  xpBonus:   { name:'经验加成', icon:'✨', desc:'获得经验 +8%/级', max:8, baseCost:60 },
+};
+// 商店费用递增曲线：每级费用 = 基础费 × 1.7^当前级
+const metaCost = (id, lv) => Math.floor(META_DEFS[id].baseCost * Math.pow(1.7, lv));
 
 // 武器配置表（首发：暗黑系 + 圣骑系）
 const WEAPON_DEFS = {
@@ -234,11 +255,14 @@ function writeSave() {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       coins: game.coins,
       records: save.records, // 最高存活/击杀/伤害纪录
+      meta: save.meta,       // 局外永久属性等级
     }));
   } catch (e) { /* 隐私模式下存储失败不影响游戏 */ }
 }
 const save = loadSave();
 save.records = save.records || { time: 0, kills: 0, damage: 0 };
+save.meta = save.meta || { dmg: 0, hp: 0, moveSpeed: 0, pickup: 0, cdr: 0, xpBonus: 0 }; // 局外属性存档
+game.coins = save.coins || 0; // 关键修复：金币回填（之前重开会丢档被覆盖）
 
 // ============================== 输入层 ==============================
 const keys = {}; // 键盘状态
@@ -376,15 +400,15 @@ groundTile.width = 128; groundTile.height = 64;
 
 // ============================== 玩家属性计算 ==============================
 function recomputeStats() {
-  const p = player.passives;
-  player.dmgMult = 1 + 0.12 * (p.dmg || 0);
+  const p = player.passives, m = save.meta; // 局内被动 + 局外永久属性双层叠加
+  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0));
   player.atkSpeedMult = 1 + 0.10 * (p.atkSpeed || 0);
   player.areaMult = 1 + 0.12 * (p.area || 0);
-  player.cdMult = Math.max(0.4, 1 - 0.08 * (p.cdr || 0));
+  player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0));
   player.projSpeedMult = 1 + 0.12 * (p.projSpeed || 0);
-  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0));
-  player.pickup = 110 * (1 + 0.30 * (p.pickup || 0));
-  const newMax = CONFIG.playerHp + 25 * (p.hp || 0);
+  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0));
+  player.pickup = 110 * (1 + 0.30 * (p.pickup || 0)) * (1 + 0.10 * (m.pickup || 0));
+  const newMax = CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0);
   if (newMax > player.maxHp) player.hp += newMax - player.maxHp; // 加上限时补差值
   player.maxHp = newMax;
 }
@@ -746,6 +770,7 @@ function damagePlayer(dmg) {
 
 // ============================== 经验与升级 ==============================
 function addXp(v) {
+  v = Math.round(v * (1 + 0.08 * (save.meta.xpBonus || 0))); // 局外经验加成
   game.xp += v;
   while (game.xp >= game.xpNeed) {
     game.xp -= game.xpNeed;
@@ -1377,10 +1402,51 @@ function togglePause() {
   else if (game.state === 'paused') { game.state = 'playing'; panel.classList.add('hidden'); }
 }
 
+// 升级商店：渲染商品列表，点击购买（金币不足不响应）
+function renderShop() {
+  document.getElementById('shopCoins').textContent = '金币：' + game.coins + '　（属性下局生效）';
+  const box = document.getElementById('shopItems');
+  box.innerHTML = '';
+  for (const id in META_DEFS) {
+    const def = META_DEFS[id], lv = save.meta[id] || 0;
+    const cost = metaCost(id, lv);
+    const maxed = lv >= def.max;
+    const div = document.createElement('div');
+    div.className = 'card' + (maxed ? '' : '');
+    div.innerHTML = `<div class="icon">${def.icon}</div><div class="name">${def.name}</div>` +
+      `<div class="desc">${def.desc}</div>` +
+      `<div class="tag">${maxed ? '已满级 ✓' : 'Lv ' + lv + '/' + def.max + '　💰' + cost}</div>`;
+    if (!maxed) {
+      div.addEventListener('click', () => {
+        if (game.coins >= cost) {
+          game.coins -= cost;
+          save.meta[id] = lv + 1;
+          writeSave();      // 立即落盘
+          renderShop();     // 刷新价格
+          LOG.info('商店购买：' + def.name + ' → Lv' + (lv + 1) + '，剩余金币 ' + game.coins);
+        } else {
+          LOG.warn('金币不足：' + def.name + ' 需要 ' + cost + '，只有 ' + game.coins);
+        }
+      });
+    }
+    box.appendChild(div);
+  }
+}
+document.getElementById('shopBtn').addEventListener('click', () => {
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('shop').classList.remove('hidden');
+  renderShop();
+});
+document.getElementById('shopBack').addEventListener('click', () => {
+  document.getElementById('shop').classList.add('hidden');
+  showMenu();
+});
+
 function showMenu() {
   game.state = 'menu';
   document.getElementById('menuRecords').innerHTML =
-    `历史最佳：存活 <b>${fmtTime(save.records.time)}</b>　击杀 <b>${save.records.kills}</b>　伤害 <b>${save.records.damage.toLocaleString()}</b>`;
+    `金币 <b>${game.coins}</b>　历史最佳：存活 <b>${fmtTime(save.records.time)}</b>　击杀 <b>${save.records.kills}</b>　伤害 <b>${save.records.damage.toLocaleString()}</b>`;
+  document.getElementById('shop').classList.add('hidden');
   document.getElementById('menu').classList.remove('hidden');
   document.getElementById('pauseBtn').classList.add('hidden');
 }
