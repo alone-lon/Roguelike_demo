@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.13</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.13.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.13');
+LOG.info('游戏脚本加载完成 v0.13.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1108,8 +1108,7 @@ function updateWeapons(dt) {
           w.hx += dx / d * 430 * dt; w.hy += dy / d * 430 * dt;
           if (d < 20) {
             w.hammerOut = false;
-            if (w.evolved) { // 进化：落地冲击波
-              shake(10, 0.35);
+            if (w.evolved) { // 进化：落地冲击波（已去屏幕震动）
               addParticles(player.x, player.y, '#ffd77a', 22, 220);
               for (const e of enemies) {
                 if (!e.dead && dist2(e, player) < (150 * player.areaMult + e.r) ** 2) damageEnemy(e, weaponDmg(11, lv) * 1.6);
@@ -1392,7 +1391,6 @@ function updateSummons(dt) {
       fireZones.push({ x: m.x, y: m.y, r: m.r * 0.62, life: 2.5, tickCd: 0, dmg: m.dmg * 0.22 }); // 陨石坑灼烧
       addParticles(m.x, m.y, '#ff9d47', 18, 260);
       addParticles(m.x, m.y, '#ffd77a', 8, 180);
-      shake(7, 0.3);
       AudioSys.play('bomb');
     }
   }
@@ -1579,7 +1577,7 @@ function updateDrops(dt) {
       if (d.type === 'chicken') { player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.3); addDmgText(player.x, player.y - 40, '+回血', '#7dff8a', 18); }
       else if (d.type === 'magnet') { for (const g of gems) { g.x = player.x; g.y = player.y; } addDmgText(player.x, player.y - 40, '全屏吸取！', '#7de6ff', 18); }
       else if (d.type === 'bomb') {
-        shake(16, 0.6); game.flashT = 0.5;
+        game.flashT = 0.5;
         AudioSys.play('bomb');
         addParticles(player.x, player.y, '#ffd77a', 40, 380);
         for (const e of enemies) if (!e.dead && e.type !== 'boss') damageEnemy(e, 9999);
@@ -1627,7 +1625,7 @@ function updateEnemies(dt) {
             const a = i * Math.PI * 2 / 14;
             eBullets.push({ x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
           }
-          shake(6, 0.25);
+          // 已去屏幕震动（攻击特效一律不震）
         }
       }
     }
@@ -2169,8 +2167,7 @@ function loop(now) {
         }
         addParticles(b.x, b.y, '#ff9d47', 14, 220);
         addParticles(b.x, b.y, '#ffd77a', 6, 150);
-        shake(5, 0.22);
-        AudioSys.play('bomb');
+        AudioSys.play('bomb'); // 已去屏幕震动（老大反馈震动太多）
         bullets.splice(i, 1);
         continue;
       }
