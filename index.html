@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.8</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.9</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.8');
+LOG.info('游戏脚本加载完成 v0.9');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -186,7 +186,8 @@ const AudioSys = {
       this.master.connect(this.ctx.destination);
       this.muted = save.settings.muted; // 恢复静音记忆
     }
-    this.master.gain.value = this.muted ? 0 : 0.55;
+    this.volumeLv = (save.settings.volumeLv !== undefined) ? save.settings.volumeLv : (this.muted ? 0 : 2);
+    this.master.gain.value = [0, 0.28, 0.55][this.volumeLv];
     if (this.ctx.state === 'suspended') this.ctx.resume(); // 解除自动播放限制
   },
   // 基础合成音：振荡器 + 音量包络（slideTo 实现滑音）
@@ -270,6 +271,17 @@ const AudioSys = {
       this.bgmStep++;
       this.bgmNext += 0.216; // ≈139BPM 八分音符
     }
+  },
+  // 音量三档循环：0静音/1半音/2全开（记忆到存档）
+  cycleVolume() {
+    // 注意：volumeLv=0 是合法档位，不能用 || 兜底（0会被当假值卡死循环）
+    this.volumeLv = ((this.volumeLv === undefined ? 2 : this.volumeLv) + 1) % 3;
+    this.muted = this.volumeLv === 0;
+    save.settings.volumeLv = this.volumeLv;
+    save.settings.muted = this.muted;
+    writeSave();
+    if (this.master) this.master.gain.value = [0, 0.28, 0.55][this.volumeLv];
+    return this.volumeLv;
   },
   // 静音开关（记忆到存档）
   toggleMute() {
@@ -373,6 +385,7 @@ const game = {
   combo: 0, comboT: 0, comboScale: 0, // 连杀计数/连杀计时/连杀跳字动画
   coinPulse: 0,                        // 金币拾取脉冲动画
   pendingLevels: 0,                    // 连升排队数：每级都给一次5选1
+  bannerT: 0, bannerText: '',          // 演出横幅（Boss出场等）
 };
 window.__game = game; // 调试/测试挂点
 
@@ -387,6 +400,7 @@ const player = {
 // 实体数组
 let enemies = [], bullets = [], eBullets = [], gems = [], drops = [], particles = [], dmgTexts = [];
 let minions = [], zaps = [], fireZones = []; // 召唤小骷髅 / 闪电链特效 / 圣火区域
+let ghosts = []; // 死亡消散残影
 
 // ============================== 存档（localStorage） ==============================
 const SAVE_KEY = 'roguelike_demo_save_v1';
@@ -404,7 +418,7 @@ function writeSave() {
 const save = loadSave();
 save.records = save.records || { time: 0, kills: 0, damage: 0 };
 save.meta = save.meta || { dmg: 0, hp: 0, moveSpeed: 0, pickup: 0, cdr: 0, xpBonus: 0 }; // 局外属性存档
-save.settings = save.settings || { muted: false }; // 设置项（静音记忆）
+save.settings = save.settings || { muted: false, volumeLv: 2 }; // 设置项（静音/音量档记忆）
 game.coins = save.coins || 0; // 关键修复：金币回填（之前重开会丢档被覆盖）
 
 // ============================== 输入层 ==============================
@@ -470,6 +484,10 @@ const dist2 = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx +
 
 // 屏幕震动（爽感全家桶之一）
 function shake(mag, t) { game.shakeMag = Math.max(game.shakeMag, mag); game.shakeT = Math.max(game.shakeT, t); }
+// 移动端震动反馈（桌面浏览器自动忽略）
+function vibrate(pattern) {
+  if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) { /* 不支持则忽略 */ } }
+}
 
 // 伤害飘字
 function addDmgText(x, y, text, color, size) {
@@ -929,6 +947,8 @@ function updateSpawner(dt) {
     spawnEnemy('boss');
     game.flashT = 1.2; shake(18, 0.8); // 红屏警告
     AudioSys.play('boss');
+    game.bannerText = '⚠ 最终BOSS 降临 ⚠'; game.bannerT = 2.6; // 出场演出横幅
+    vibrate([80, 70, 80]);
     addDmgText(player.x, player.y - 60, '最终BOSS 降临！', '#ff5566', 26);
   }
   // 16分钟仍未击杀Boss也算存活通关
@@ -1184,11 +1204,15 @@ function updateSummons(dt) {
 // ============================== 伤害与击杀 ==============================
 function damageEnemy(e, dmg) {
   if (e.dead) return;
-  e.hp -= dmg; e.flash = 0.12;
+  // 暴击：12% 概率 1.7 倍，金色大字跳脸
+  const crit = Math.random() < 0.12;
+  const finalDmg = crit ? dmg * 1.7 : dmg;
+  e.hp -= finalDmg; e.flash = 0.12;
   if (Math.random() < 0.5) addParticles(e.x, e.y - e.r, '#fff', 2, 90); // 命中火花（概率触发省性能）
   AudioSys.play('hit');
-  game.damage += dmg;
-  addDmgText(e.x, e.y - e.r * 1.6, Math.round(dmg), dmg > 40 ? '#ffd77a' : '#fff', dmg > 40 ? 20 : 15);
+  game.damage += finalDmg;
+  addDmgText(e.x, e.y - e.r * 1.6, Math.round(finalDmg) + (crit ? '!' : ''),
+    crit ? '#ffd77a' : (finalDmg > 40 ? '#ffb84d' : '#fff'), crit ? 24 : (finalDmg > 40 ? 20 : 15));
   if (e.hp <= 0) killEnemy(e);
 }
 
@@ -1199,6 +1223,7 @@ function killEnemy(e) {
   game.combo++; game.comboT = 2.5; game.comboScale = 1;
   AudioSys.play('pop');
   addParticles(e.x, e.y - 10, e.head, e.type === 'boss' ? 60 : 10, e.type === 'boss' ? 320 : 150);
+  ghosts.push({ x: e.x, y: e.y, scale: e.scale, type: e.type, body: e.body, head: e.head, life: 0.35, maxLife: 0.35 }); // 死亡消散残影
   if (e.type === 'boss') {
     shake(20, 1); game.flashT = 0.8;
     victory();
@@ -1225,6 +1250,7 @@ function damagePlayer(dmg) {
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
   AudioSys.play('hurt');
+  vibrate(30);
   shake(9, 0.3);
   addDmgText(player.x, player.y - 40, '-' + Math.round(dmg), '#ff6b6b', 20);
   game.flashT = Math.max(game.flashT, 0.25);
@@ -1289,6 +1315,7 @@ function applyOption(opt) {
     w.evolved = true;
     LOG.info('超武进化：' + opt.ev.name);
     AudioSys.play('evolve');
+    vibrate([40, 60, 90]);
     addDmgText(player.x, player.y - 60, '超武觉醒！' + opt.ev.name, '#ffd77a', 26);
     game.flashT = 0.6; shake(12, 0.5);
   } else if (opt.type === 'newWeapon') giveWeapon(opt.id);
@@ -1435,6 +1462,7 @@ function updatePlayer(dt) {
     player.y += my * player.speed * dt;
     if (mx !== 0) player.facing = mx > 0 ? 1 : -1;
     player.walkT += dt * 10;
+    if (Math.random() < 0.10) addParticles(player.x, player.y, 'rgba(170,150,235,0.45)', 1, 28); // 走位扬尘
   } else {
     player.walkT *= 0.9;
   }
@@ -1453,7 +1481,7 @@ function startGame() {
   game.pendingLevels = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
-  minions = []; zaps = []; fireZones = [];
+  minions = []; zaps = []; fireZones = []; ghosts = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
   giveWeapon('arrow'); // 初始武器：暗影箭
@@ -1606,6 +1634,14 @@ function render() {
         roundRect(bx, by, bw * clamp(e.hp / e.maxHp, 0, 1), 7, 3); ctx.fill();
       }
     }
+  }
+
+  // ---- 死亡消散残影（缩小+淡出）----
+  for (const g of ghosts) {
+    ctx.save();
+    ctx.globalAlpha = (g.life / g.maxLife) * 0.55;
+    drawMonster(wx(g.x), wy(g.y), g.scale * (0.55 + 0.45 * g.life / g.maxLife), g);
+    ctx.restore();
   }
 
   // ---- 子弹 ----
@@ -1770,6 +1806,21 @@ function renderHud() {
     ctx.fillText(game.combo + ' 连杀!', 0, 0);
     ctx.restore();
   }
+  // 演出横幅（弹入放大 → 淡出）
+  if (game.bannerT > 0) {
+    const p = 1 - game.bannerT / 2.6;
+    const bScale = p < 0.15 ? (2.2 - p / 0.15 * 1.2) : 1;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, game.bannerT * 1.2);
+    ctx.translate(W / 2, H * 0.32); ctx.scale(bScale, bScale);
+    ctx.fillStyle = 'rgba(120,10,30,0.55)';
+    roundRect(-220, -34, 440, 68, 16); ctx.fill();
+    ctx.font = 'bold 34px "Microsoft YaHei",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.strokeText(game.bannerText, 0, 0);
+    ctx.fillStyle = '#ff6b7d'; ctx.fillText(game.bannerText, 0, 0);
+    ctx.restore();
+  }
   // 金币拾取浮字（+1 向上飘散淡出）
   if (game.coinPulse > 0) {
     ctx.save();
@@ -1853,6 +1904,11 @@ function loop(now) {
       }
       if (b.life <= 0) eBullets.splice(i, 1);
     }
+    // 死亡残影衰减
+    for (let i = ghosts.length - 1; i >= 0; i--) {
+      ghosts[i].life -= dt;
+      if (ghosts[i].life <= 0) ghosts.splice(i, 1);
+    }
     // 粒子/飘字
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -1868,6 +1924,7 @@ function loop(now) {
 
   // 计时器衰减（震屏/红闪在暂停时也会消散）
   game.shakeT = Math.max(0, game.shakeT - dt);
+  game.bannerT = Math.max(0, game.bannerT - dt);
   game.flashT = Math.max(0, game.flashT - dt);
 
   render();
@@ -1952,11 +2009,11 @@ function closeShop() {
 document.getElementById('shopBack').addEventListener('click', closeShop);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 document.getElementById('audioBtn').addEventListener('click', () => {
-  // 静音开关：点击也算用户手势，顺手 init
+  // 音量三档循环：🔊全开 → 🔉半音 → 🔇静音（点击也算用户手势，顺手 init）
   AudioSys.init();
-  const m = AudioSys.toggleMute();
-  document.getElementById('audioBtn').textContent = m ? '🔇' : '🔊';
-  LOG.info(m ? '已静音' : '取消静音');
+  const lv = AudioSys.cycleVolume();
+  document.getElementById('audioBtn').textContent = ['🔇', '🔉', '🔊'][lv];
+  LOG.info('音量档位：' + lv);
 });
 
 function showMenu() {
@@ -1968,7 +2025,7 @@ function showMenu() {
   document.getElementById('pauseBtn').classList.add('hidden');
 }
 showMenu();
-document.getElementById('audioBtn').textContent = save.settings.muted ? '🔇' : '🔊'; // 同步静音记忆
+document.getElementById('audioBtn').textContent = ['🔇', '🔉', '🔊'][save.settings.volumeLv !== undefined ? save.settings.volumeLv : (save.settings.muted ? 0 : 2)]; // 同步音量档记忆
 AudioSys.muted = save.settings.muted; // 启动即同步静音状态
 // 音频解锁保险：任何首次触摸/点击都尝试 init（部分手机 webview 对手势解锁挑剔）
 document.addEventListener('touchstart', () => AudioSys.init(), { once: true, passive: true });
