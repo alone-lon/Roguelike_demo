@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.12</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.13</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.11');
+LOG.info('游戏脚本加载完成 v0.13');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -353,6 +353,10 @@ const WEAPON_DEFS = {
   storm:    { name:'神圣风暴', icon:'⚡', desc:'闪电链打击周围敌人' },
   holyfire: { name:'奉献圣火', icon:'🔥', desc:'脚下留下圣火区域' },
   meteor:   { name:'陨石术',   icon:'☄', desc:'天降陨石轰砸怪群' },
+  gatling:  { name:'加特林',   icon:'🔫', desc:'高频弹幕持续扫射' },
+  rocket:   { name:'火箭筒',   icon:'🚀', desc:'火箭弹命中爆炸清场' },
+  wolf:     { name:'暗影狼',   icon:'🐺', desc:'召唤狼群撕咬敌人' },
+  ghost:    { name:'幽灵弓手', icon:'🏹', desc:'幽灵环绕自动放箭' },
 };
 
 // 被动配置表（8项，兼做进化材料）
@@ -378,6 +382,10 @@ const EVOLUTIONS = [
   { weapon:'storm',    passive:'moveSpeed', name:'天罚风暴', icon:'🌩', desc:'落雷范围数量大增' },
   { weapon:'holyfire', passive:'pickup',    name:'炼狱圣域', icon:'🌋', desc:'圣火燎原持久灼烧' },
   { weapon:'meteor',   passive:'area',      name:'天陨火雨', icon:'☄', desc:'陨石数量范围大增' },
+  { weapon:'gatling',  passive:'cdr',       name:'暴风雨机枪', icon:'💥', desc:'射速翻倍并穿透敌人' },
+  { weapon:'rocket',   passive:'projSpeed', name:'多管火箭炮', icon:'🎇', desc:'火箭数量爆炸范围大增' },
+  { weapon:'wolf',     passive:'moveSpeed', name:'狼群狂潮', icon:'🌪', desc:'狼群数量伤害大增' },
+  { weapon:'ghost',    passive:'atkSpeed',  name:'幻影游侠团', icon:'👥', desc:'幽灵弓手数量攻速大增' },
 ];
 
 // ============================== 游戏状态 ==============================
@@ -407,6 +415,7 @@ let enemies = [], bullets = [], eBullets = [], gems = [], drops = [], particles 
 let minions = [], zaps = [], fireZones = []; // 召唤小骷髅 / 闪电链特效 / 圣火区域
 let ghosts = []; // 死亡消散残影
 let meteors = []; // 陨石术：高空坠落弹体
+let turrets = []; // 幽灵弓手（召唤炮台）
 
 // ============================== 存档（localStorage） ==============================
 const SAVE_KEY = 'roguelike_demo_save_v1';
@@ -1133,10 +1142,11 @@ function updateWeapons(dt) {
           minions.push({
             x: player.x + Math.cos(a) * 30, y: player.y + Math.sin(a) * 30,
             vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
+            kind: 'skel', spd: 220,
             dmg: weaponDmg(4.5, lv) * (w.evolved ? 1.3 : 1), life: 3.2, r: 12,
           });
         }
-        while (minions.length > 12) minions.shift(); // 数量上限防刷屏
+        while (minions.length > 16) minions.shift(); // 数量上限（骷髅+狼共用池）防刷屏
       }
     }
 
@@ -1199,6 +1209,83 @@ function updateWeapons(dt) {
       }
     }
 
+    // ---- 加特林（热武器）：高频弹幕扫射（进化：暴风雨机枪 穿甲速射）----
+    if (id === 'gatling') {
+      const interval = (w.evolved ? 0.09 : 0.16) * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        const target = nearestEnemy();
+        if (target) {
+          w.cd = interval;
+          const base = Math.atan2(target.y - player.y, target.x - player.x) + rand(-0.12, 0.12);
+          bullets.push({
+            x: player.x, y: player.y - 12, vx: Math.cos(base) * 560 * player.projSpeedMult,
+            vy: Math.sin(base) * 560 * player.projSpeedMult,
+            dmg: weaponDmg(w.evolved ? 1.5 : 1.2, lv), r: 4, life: 1.0,
+            pierce: w.evolved ? 1 : 0, type: 'shot',
+          });
+          if (Math.random() < 0.35) AudioSys.play('shoot');
+          player.swingT = 0.18;
+        }
+      }
+    }
+
+    // ---- 火箭筒（热武器）：命中/到时爆炸 AoE（进化：多管火箭炮）----
+    if (id === 'rocket') {
+      const interval = 1.6 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        const n = 1 + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0) + (w.evolved ? 2 : 0);
+        for (let i = 0; i < n; i++) {
+          const target = nearestEnemy();
+          const base = (target ? Math.atan2(target.y - player.y, target.x - player.x) : 0) + (i - (n - 1) / 2) * 0.22;
+          bullets.push({
+            x: player.x, y: player.y - 12, vx: Math.cos(base) * 330 * player.projSpeedMult,
+            vy: Math.sin(base) * 330 * player.projSpeedMult,
+            dmg: weaponDmg(7, lv) * (w.evolved ? 1.25 : 1),
+            aoe: (90 + lv * 6) * player.areaMult * (w.evolved ? 1.4 : 1),
+            aoeDmg: weaponDmg(4, lv) * (w.evolved ? 1.25 : 1),
+            r: 8, life: 1.6, pierce: 0, type: 'rocket',
+          });
+        }
+        AudioSys.play('shoot');
+        player.swingT = 0.22;
+      }
+    }
+
+    // ---- 暗影狼（召唤系）：快狼群撕咬（进化：狼群狂潮）----
+    if (id === 'wolf') {
+      const interval = 2.2 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        const n = 1 + Math.floor(lv / 2) + (w.evolved ? 2 : 0);
+        for (let i = 0; i < n; i++) {
+          const a = rand(0, Math.PI * 2);
+          minions.push({
+            kind: 'wolf', spd: 330,
+            x: player.x + Math.cos(a) * 35, y: player.y + Math.sin(a) * 35,
+            vx: Math.cos(a) * 80, vy: Math.sin(a) * 80,
+            dmg: weaponDmg(3.5, lv) * (w.evolved ? 1.3 : 1), life: 4, r: 11,
+          });
+        }
+        while (minions.length > 16) minions.shift();
+      }
+    }
+
+    // ---- 幽灵弓手（召唤系）：绕玩家漂浮自动放箭（进化：幻影游侠团）----
+    if (id === 'ghost') {
+      const interval = 2.8 * player.cdMult / player.atkSpeedMult;
+      const cap = 3 + (w.evolved ? 2 : 0);
+      const alive = turrets.length;
+      if (w.cd <= 0 && alive < cap) {
+        w.cd = interval;
+        turrets.push({
+          x: player.x, y: player.y, orbitA: rand(0, Math.PI * 2),
+          fireCd: rand(0.2, 0.6), life: 5 + lv * 0.4,
+          dmg: weaponDmg(1.6, lv) * (w.evolved ? 1.3 : 1),
+        });
+      }
+    }
+
     // ---- 奉献圣火：脚下留下圣火区域（进化：炼狱圣域 火大持久）----
     if (id === 'holyfire') {
       const interval = 1.3 * player.cdMult / player.atkSpeedMult;
@@ -1237,8 +1324,9 @@ function updateSummons(dt) {
     if (target) {
       const dx = target.x - m.x, dy = target.y - m.y, d = Math.hypot(dx, dy) || 1;
       // 转向插值（走弧线，比直冲更像活物）
-      m.vx += (dx / d * 220 - m.vx) * Math.min(1, dt * 5);
-      m.vy += (dy / d * 220 - m.vy) * Math.min(1, dt * 5);
+      const spd = m.spd || 220;
+      m.vx += (dx / d * spd - m.vx) * Math.min(1, dt * 5);
+      m.vy += (dy / d * spd - m.vy) * Math.min(1, dt * 5);
     }
     m.x += m.vx * dt; m.y += m.vy * dt;
     for (const e of enemies) {
@@ -1267,6 +1355,30 @@ function updateSummons(dt) {
   for (let i = zaps.length - 1; i >= 0; i--) {
     zaps[i].life -= dt;
     if (zaps[i].life <= 0) zaps.splice(i, 1);
+  }
+  // 幽灵弓手：绕玩家漂浮 + 自动放箭
+  for (let i = turrets.length - 1; i >= 0; i--) {
+    const t = turrets[i];
+    t.life -= dt;
+    if (t.life <= 0) { turrets.splice(i, 1); continue; }
+    t.orbitA += dt * 0.7;
+    t.x = player.x + Math.cos(t.orbitA) * 62;
+    t.y = player.y + Math.sin(t.orbitA) * 44;
+    t.fireCd -= dt;
+    if (t.fireCd <= 0) {
+      const target = nearestEnemy();
+      if (target) {
+        t.fireCd = 0.55;
+        const a = Math.atan2(target.y - t.y, target.x - t.x);
+        bullets.push({
+          x: t.x, y: t.y - 10, vx: Math.cos(a) * 430 * player.projSpeedMult,
+          vy: Math.sin(a) * 430 * player.projSpeedMult, dmg: t.dmg, r: 5, life: 1.2,
+          pierce: 0, type: 'shot',
+        });
+      } else {
+        t.fireCd = 0.3;
+      }
+    }
   }
   // 陨石坠落与落地爆破：AoE 伤害 + 陨石坑灼烧
   for (let i = meteors.length - 1; i >= 0; i--) {
@@ -1566,7 +1678,7 @@ function startGame() {
   game.pendingLevels = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
-  minions = []; zaps = []; fireZones = []; ghosts = []; meteors = [];
+  minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
   giveWeapon('arrow'); // 初始武器：暗影箭
@@ -1775,18 +1887,66 @@ function render() {
       ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(0, -5); ctx.lineTo(-14, 0); ctx.lineTo(0, 5); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillRect(-4, -1.5, 10, 3);
       ctx.restore();
+    } else if (b.type === 'rocket') {
+      // 火箭弹：弹体+尾焰
+      const a = Math.atan2(b.vy, b.vx);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.fillStyle = 'rgba(255,150,60,0.4)';
+      ctx.beginPath(); ctx.ellipse(-12, 0, 12, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#5a5a6e';
+      roundRect(-8, -4.5, 16, 9, 4); ctx.fill();
+      ctx.fillStyle = '#c93048';
+      ctx.beginPath(); ctx.moveTo(8, -4.5); ctx.lineTo(13, 0); ctx.lineTo(8, 4.5); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    } else if (b.type === 'shot') {
+      // 机枪曳光弹
+      const a = Math.atan2(b.vy, b.vx);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.fillStyle = 'rgba(255,215,120,0.5)';
+      roundRect(-8, -1.5, 14, 3, 1.5); ctx.fill();
+      ctx.fillStyle = '#ffe9a8';
+      roundRect(-2, -1.5, 8, 3, 1.5); ctx.fill();
+      ctx.restore();
     }
   }
-  // 召唤小骷髅（Q版小圆头）
+  // 召唤物：小骷髅 / 暗影狼
   for (const m of minions) {
     const x = wx(m.x), y = wy(m.y);
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath(); ctx.ellipse(x, y, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#e8e0ff';
-    ctx.beginPath(); ctx.arc(x, y - 10, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#3a2a5a';
-    ctx.beginPath(); ctx.arc(x - 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
+    if (m.kind === 'wolf') {
+      // 暗影狼：低伏身姿+尖耳+尾巴
+      ctx.fillStyle = '#3a2c5e';
+      ctx.beginPath(); ctx.ellipse(x, y - 8, 11, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4a3a72';
+      ctx.beginPath(); ctx.arc(x + 8, y - 13, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 6, y - 17); ctx.lineTo(x + 8, y - 21); ctx.lineTo(x + 10, y - 17); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd75c';
+      ctx.beginPath(); ctx.arc(x + 10, y - 14, 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#3a2c5e'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x - 10, y - 9); ctx.quadraticCurveTo(x - 16, y - 14, x - 13, y - 18); ctx.stroke();
+    } else {
+      // 小骷髅
+      ctx.fillStyle = '#e8e0ff';
+      ctx.beginPath(); ctx.arc(x, y - 10, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3a2a5a';
+      ctx.beginPath(); ctx.arc(x - 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // 幽灵弓手（半透明灵体+小弓）
+  for (const t of turrets) {
+    const x = wx(t.x), y = wy(t.y) + Math.sin(performance.now() / 300 + t.orbitA * 3) * 3;
+    ctx.fillStyle = 'rgba(140,200,255,0.28)'; // 灵体光晕
+    ctx.beginPath(); ctx.arc(x, y - 12, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(190,230,255,0.85)';
+    ctx.beginPath(); ctx.arc(x, y - 13, 7.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 6, y - 8); ctx.quadraticCurveTo(x, y + 2, x + 6, y - 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1a3050';
+    ctx.beginPath(); ctx.arc(x - 2.4, y - 14, 1.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 2.4, y - 14, 1.3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#c9a24a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x + 8, y - 10, 6, -1.2, 1.2); ctx.stroke();
   }
   // 神圣闪电链特效（折线抖动模拟闪电）
   for (const z of zaps) {
@@ -2001,6 +2161,18 @@ function loop(now) {
           damageEnemy(e, b.dmg); hit = true;
           if (b.pierce > 0) b.pierce--; else break;
         }
+      }
+      // 火箭弹：命中或到时爆炸 AoE
+      if (b.type === 'rocket' && (hit || b.life <= 0)) {
+        for (const e of enemies) {
+          if (!e.dead && dist2(e, b) < (b.aoe + e.r) ** 2) damageEnemy(e, b.aoeDmg);
+        }
+        addParticles(b.x, b.y, '#ff9d47', 14, 220);
+        addParticles(b.x, b.y, '#ffd77a', 6, 150);
+        shake(5, 0.22);
+        AudioSys.play('bomb');
+        bullets.splice(i, 1);
+        continue;
       }
       if (hit && b.pierce <= 0) { bullets.splice(i, 1); continue; }
       if (b.life <= 0) bullets.splice(i, 1);
