@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.9</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.10</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.9');
+LOG.info('游戏脚本加载完成 v0.10');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -225,7 +225,7 @@ const AudioSys = {
     if (!this.ctx || this.muted) return;
     if (this.ctx.state === 'suspended') this.ctx.resume();
     const now = performance.now();
-    const minGap = { hit: 80, pop: 80, shoot: 100, coin: 60 }[name] || 0;
+    const minGap = { hit: 80, pop: 80, shoot: 100, coin: 60, bomb: 150 }[name] || 0;
     if (this.last[name] && now - this.last[name] < minGap) return;
     this.last[name] = now;
     const T = this.ctx.currentTime;
@@ -324,7 +324,7 @@ const CONFIG = {
   weaponMax: 5, passiveMax: 5,                                     // 等级上限
   bossTime: 900, surviveTime: 960,                                 // 15分钟Boss / 16分钟存活通关
   enemyCap: 230,                                                   // 同屏怪物上限
-  xpNeed: lv => Math.floor(5 + lv * 4 + lv * lv * 0.8),            // 升级经验曲线
+  xpNeed: lv => Math.floor(5 + lv * 3.6 + lv * lv * 0.72),         // 升级经验曲线（略加快节奏）
 };
 
 // 局外永久属性表（金币商店，加属性=加一行）
@@ -349,6 +349,7 @@ const WEAPON_DEFS = {
   sword:    { name:'裁决飞剑', icon:'🗡', desc:'贯穿飞剑穿透敌阵' },
   storm:    { name:'神圣风暴', icon:'⚡', desc:'闪电链打击周围敌人' },
   holyfire: { name:'奉献圣火', icon:'🔥', desc:'脚下留下圣火区域' },
+  meteor:   { name:'陨石术',   icon:'☄', desc:'天降陨石轰砸怪群' },
 };
 
 // 被动配置表（8项，兼做进化材料）
@@ -373,6 +374,7 @@ const EVOLUTIONS = [
   { weapon:'sword',    passive:'projSpeed', name:'万剑归宗', icon:'⚔', desc:'剑阵齐发无限穿透' },
   { weapon:'storm',    passive:'moveSpeed', name:'天罚风暴', icon:'🌩', desc:'落雷范围数量大增' },
   { weapon:'holyfire', passive:'pickup',    name:'炼狱圣域', icon:'🌋', desc:'圣火燎原持久灼烧' },
+  { weapon:'meteor',   passive:'area',      name:'天陨火雨', icon:'☄', desc:'陨石数量范围大增' },
 ];
 
 // ============================== 游戏状态 ==============================
@@ -401,6 +403,7 @@ const player = {
 let enemies = [], bullets = [], eBullets = [], gems = [], drops = [], particles = [], dmgTexts = [];
 let minions = [], zaps = [], fireZones = []; // 召唤小骷髅 / 闪电链特效 / 圣火区域
 let ghosts = []; // 死亡消散残影
+let meteors = []; // 陨石术：高空坠落弹体
 
 // ============================== 存档（localStorage） ==============================
 const SAVE_KEY = 'roguelike_demo_save_v1';
@@ -886,7 +889,7 @@ function recomputeStats() {
 
 // ============================== 敌人生成与难度曲线 ==============================
 // 血量双成长：线性 + 每3分钟阶梯抬升（压迫感）
-function hpMult() { return (1 + game.time / 90) * (1 + Math.floor(game.time / 180) * 0.5); }
+function hpMult() { return (1 + game.time / 85) * (1 + Math.floor(game.time / 180) * 0.55); } // 玩家数值加强后同步微调
 function dmgMult() { return 1 + Math.floor(game.time / 180) * 0.25; }
 
 const ENEMY_TYPES = {
@@ -986,7 +989,7 @@ function updateWeapons(dt) {
             const a = base + (i - (count - 1) / 2) * spread;
             bullets.push({
               x: player.x, y: player.y - 12, vx: Math.cos(a) * 430 * player.projSpeedMult,
-              vy: Math.sin(a) * 430 * player.projSpeedMult, dmg: weaponDmg(12, lv) * (w.evolved ? 1.25 : 1),
+              vy: Math.sin(a) * 430 * player.projSpeedMult, dmg: weaponDmg(14, lv) * (w.evolved ? 1.25 : 1),
               r: 7, life: 1.6, pierce, type: 'arrow',
             });
           }
@@ -997,7 +1000,7 @@ function updateWeapons(dt) {
     // ---- 噬魂血镰：环绕旋转（进化：亡者血镰 吸血+大范围）----
     if (id === 'scythe') {
       let n = 1 + Math.floor(lv / 2) + (w.evolved ? 2 : 0);
-      const orbitR = (72 + lv * 4) * player.areaMult * (w.evolved ? 1.35 : 1);
+      const orbitR = (95 + lv * 6) * player.areaMult * (w.evolved ? 1.35 : 1);
       for (let i = 0; i < n; i++) {
         const a = w.t * 2.4 + i * Math.PI * 2 / n;
         const sx = player.x + Math.cos(a) * orbitR, sy = player.y + Math.sin(a) * orbitR * 0.7; // 压扁成椭圆更像2.5D
@@ -1006,7 +1009,7 @@ function updateWeapons(dt) {
           const er = e.r + 14;
           if ((e.x - sx) ** 2 + (e.y - sy) ** 2 < er * er) {
             e.hitT.scythe = 0.45;
-            damageEnemy(e, weaponDmg(10, lv) * (w.evolved ? 1.4 : 1));
+            damageEnemy(e, weaponDmg(12, lv) * (w.evolved ? 1.4 : 1));
             if (w.evolved) player.hp = Math.min(player.maxHp, player.hp + 2); // 进化吸血
           }
         }
@@ -1015,7 +1018,7 @@ function updateWeapons(dt) {
 
     // ---- 瘟疫毒环：脚下持续毒圈（进化：亡疫领域 减速+大范围）----
     if (id === 'poison') {
-      const rad = (62 + lv * 9) * player.areaMult * (w.evolved ? 1.5 : 1);
+      const rad = (88 + lv * 12) * player.areaMult * (w.evolved ? 1.5 : 1); // 范围加大（老大反馈割草不够爽）
       w.poisonR = rad;
       if (w.cd <= 0) {
         w.cd = 0.5;
@@ -1023,7 +1026,7 @@ function updateWeapons(dt) {
           if (e.dead || e.hitT.poison > 0) continue;
           if (dist2(e, player) < (rad + e.r) ** 2) {
             e.hitT.poison = 0.5;
-            damageEnemy(e, weaponDmg(3, lv) * 0.6);
+            damageEnemy(e, weaponDmg(4, lv) * 0.62);
             if (w.evolved) e.slowT = 1.2; // 进化减速
           }
         }
@@ -1055,7 +1058,7 @@ function updateWeapons(dt) {
               shake(10, 0.35);
               addParticles(player.x, player.y, '#ffd77a', 22, 220);
               for (const e of enemies) {
-                if (!e.dead && dist2(e, player) < (100 * player.areaMult + e.r) ** 2) damageEnemy(e, weaponDmg(25, lv) * 1.6);
+                if (!e.dead && dist2(e, player) < (150 * player.areaMult + e.r) ** 2) damageEnemy(e, weaponDmg(25, lv) * 1.6);
               }
             }
           }
@@ -1106,7 +1109,7 @@ function updateWeapons(dt) {
           const a = base + (i - (count - 1) / 2) * spread;
           bullets.push({
             x: player.x, y: player.y - 12, vx: Math.cos(a) * 520 * player.projSpeedMult,
-            vy: Math.sin(a) * 520 * player.projSpeedMult, dmg: weaponDmg(16, lv) * (w.evolved ? 1.25 : 1),
+            vy: Math.sin(a) * 520 * player.projSpeedMult, dmg: weaponDmg(18, lv) * (w.evolved ? 1.25 : 1),
             r: 9, life: 1.2, pierce, type: 'sword',
           });
         }
@@ -1118,28 +1121,48 @@ function updateWeapons(dt) {
       const interval = 2.2 * player.cdMult / player.atkSpeedMult;
       if (w.cd <= 0) {
         w.cd = interval;
-        const range = 320 * player.areaMult * (w.evolved ? 1.5 : 1);
-        const targets = 2 + lv + (w.evolved ? 5 : 0);
+        const range = 420 * player.areaMult * (w.evolved ? 1.5 : 1);
+        const targets = 3 + lv + (w.evolved ? 5 : 0);
         // 范围内最近的N个敌人挨雷劈
         const inRange = enemies.filter(e => !e.dead && dist2(e, player) < range * range)
           .sort((a, b) => dist2(a, player) - dist2(b, player)).slice(0, targets);
         for (const e of inRange) {
           zaps.push({ x1: player.x, y1: player.y - 30, x2: e.x, y2: e.y - e.r, life: 0.18 });
-          damageEnemy(e, weaponDmg(9, lv) * (w.evolved ? 1.4 : 1));
+          damageEnemy(e, weaponDmg(11, lv) * (w.evolved ? 1.4 : 1));
+        }
+      }
+    }
+
+    // ---- 陨石术：天降陨石轰砸怪群（进化：天陨火雨 数量范围大增）----
+    if (id === 'meteor') {
+      const interval = 3.2 * player.cdMult / player.atkSpeedMult;
+      if (w.cd <= 0) {
+        w.cd = interval;
+        const n = 2 + Math.floor(lv / 2) + (w.evolved ? 3 : 0);
+        for (let i = 0; i < n; i++) {
+          // 落点参考最近的怪（怪群方向），加随机散布
+          const t = nearestEnemy();
+          const bx = t ? t.x : player.x, by = t ? t.y : player.y;
+          meteors.push({
+            x: bx + rand(-130, 130), y: by + rand(-95, 95),
+            t: -i * 0.12, dur: 0.55, // 依次落地（负值=延迟下落）
+            dmg: weaponDmg(22, lv) * (w.evolved ? 1.3 : 1),
+            r: (85 + lv * 6) * player.areaMult * (w.evolved ? 1.35 : 1),
+          });
         }
       }
     }
 
     // ---- 奉献圣火：脚下留下圣火区域（进化：炼狱圣域 火大持久）----
     if (id === 'holyfire') {
-      const interval = 3.0 * player.cdMult / player.atkSpeedMult;
+      const interval = 2.6 * player.cdMult / player.atkSpeedMult;
       if (w.cd <= 0) {
         w.cd = interval;
         fireZones.push({
           x: player.x, y: player.y,
-          r: (70 + lv * 6) * player.areaMult * (w.evolved ? 1.4 : 1),
+          r: (95 + lv * 9) * player.areaMult * (w.evolved ? 1.4 : 1),
           life: w.evolved ? 7 : 5, tickCd: 0,
-          dmg: weaponDmg(3, lv) * 0.6 * (w.evolved ? 1.5 : 1),
+          dmg: weaponDmg(4, lv) * 0.62 * (w.evolved ? 1.5 : 1),
         });
       }
     }
@@ -1199,14 +1222,30 @@ function updateSummons(dt) {
     zaps[i].life -= dt;
     if (zaps[i].life <= 0) zaps.splice(i, 1);
   }
+  // 陨石坠落与落地爆破：AoE 伤害 + 陨石坑灼烧
+  for (let i = meteors.length - 1; i >= 0; i--) {
+    const m = meteors[i];
+    m.t += dt;
+    if (m.t >= m.dur) {
+      meteors.splice(i, 1);
+      for (const e of enemies) {
+        if (!e.dead && dist2(e, m) < (m.r + e.r) ** 2) damageEnemy(e, m.dmg);
+      }
+      fireZones.push({ x: m.x, y: m.y, r: m.r * 0.62, life: 2.5, tickCd: 0, dmg: m.dmg * 0.22 }); // 陨石坑灼烧
+      addParticles(m.x, m.y, '#ff9d47', 18, 260);
+      addParticles(m.x, m.y, '#ffd77a', 8, 180);
+      shake(7, 0.3);
+      AudioSys.play('bomb');
+    }
+  }
 }
 
 // ============================== 伤害与击杀 ==============================
 function damageEnemy(e, dmg) {
   if (e.dead) return;
   // 暴击：12% 概率 1.7 倍，金色大字跳脸
-  const crit = Math.random() < 0.12;
-  const finalDmg = crit ? dmg * 1.7 : dmg;
+  const crit = Math.random() < 0.22; // 暴击率 22%（老大反馈12%太低）
+  const finalDmg = crit ? dmg * 1.8 : dmg;
   e.hp -= finalDmg; e.flash = 0.12;
   if (Math.random() < 0.5) addParticles(e.x, e.y - e.r, '#fff', 2, 90); // 命中火花（概率触发省性能）
   AudioSys.play('hit');
@@ -1481,7 +1520,7 @@ function startGame() {
   game.pendingLevels = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
-  minions = []; zaps = []; fireZones = []; ghosts = [];
+  minions = []; zaps = []; fireZones = []; ghosts = []; meteors = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
   giveWeapon('arrow'); // 初始武器：暗影箭
@@ -1642,6 +1681,22 @@ function render() {
     ctx.globalAlpha = (g.life / g.maxLife) * 0.55;
     drawMonster(wx(g.x), wy(g.y), g.scale * (0.55 + 0.45 * g.life / g.maxLife), g);
     ctx.restore();
+  }
+
+  // ---- 陨石（高空坠落 + 落点预警圈 + 火焰拖尾）----
+  for (const m of meteors) {
+    const prog = clamp(m.t / m.dur, 0, 1);
+    const drawY = wy(m.y) - (1 - prog) * 420;
+    ctx.strokeStyle = `rgba(255,130,60,${0.25 + 0.4 * prog})`; // 落点预警圈
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(wx(m.x), wy(m.y), m.r * 0.8, m.r * 0.56, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,150,60,0.32)'; // 火焰拖尾
+    ctx.beginPath(); ctx.ellipse(wx(m.x), drawY + 26, 10, 30, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7a3b26'; // 陨石本体
+    ctx.beginPath(); ctx.arc(wx(m.x), drawY, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(18,7,38,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#ff9d47'; // 烧红的顶
+    ctx.beginPath(); ctx.arc(wx(m.x) - 4, drawY - 5, 4.5, 0, Math.PI * 2); ctx.fill();
   }
 
   // ---- 子弹 ----
