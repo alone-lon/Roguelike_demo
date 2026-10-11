@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.11</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.12</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -606,79 +606,120 @@ function roundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
-// ============================== 主角动态造型 drawHero ==============================
-// 动作动态：走路交替摆腿、披风随风摆、挥剑斩击弧、呼吸起伏、偶尔眨眼
+// ============================== 主角动态造型 drawHero（暗黑风） ==============================
+// 死灵猎人：连帽暗甲+破披风+阴影中的发光双目+符文血刃；动作动态全保留（摆腿/披风/挥剑/呼吸/眨眼）
 function drawHero(x, y, s, facing) {
   const now = performance.now();
-  const moving = player.walkT > 0.5;                       // walkT 移动增长/静止衰减
-  const legSwing = moving ? Math.sin(player.walkT) * 0.6 : 0;   // 腿部摆幅
+  const moving = player.walkT > 0.5;
+  const legSwing = moving ? Math.sin(player.walkT) * 0.6 : 0;
   const capeSwing = moving ? Math.sin(player.walkT) * 3 * s : Math.sin(now / 600) * 1.5 * s;
-  const breathe = 1 + 0.022 * Math.sin(now / 480);         // 呼吸起伏
-  const blink = (Math.sin(now / 1600) > 0.97) ? 0.12 : 1;  // 偶尔眨眼
-  const swingP = player.swingT > 0 ? (1 - player.swingT / 0.22) : -1; // 挥剑进度 0→1，-1=收剑
-  const OUT = 'rgba(18,7,38,0.6)';
+  const breathe = 1 + 0.022 * Math.sin(now / 480);
+  const blink = (Math.sin(now / 1600) > 0.97) ? 0.12 : 1;
+  const swingP = player.swingT > 0 ? (1 - player.swingT / 0.22) : -1;
+  const OUT = 'rgba(8,3,18,0.78)';
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(facing, 1); // 朝向翻转，整套动作镜像
-  // 披风（身后，走路/站立随摆）
-  ctx.fillStyle = '#141c52';
+  ctx.scale(facing, 1);
+  // 脚底幽紫暗影气息（暗黑氛围）
+  const footGlow = ctx.createRadialGradient(0, -2 * s, 0, 0, -2 * s, 20 * s);
+  footGlow.addColorStop(0, 'rgba(120,80,220,0.22)');
+  footGlow.addColorStop(1, 'rgba(120,80,220,0)');
+  ctx.fillStyle = footGlow;
+  ctx.beginPath(); ctx.ellipse(0, -2 * s, 20 * s, 11 * s, 0, 0, Math.PI * 2); ctx.fill();
+  // 破烂披风（锯齿下摆+暗红内衬+随风摆）
+  const cw = capeSwing;
+  ctx.fillStyle = '#221543';
   ctx.beginPath();
-  ctx.moveTo(-5 * s, -19 * s);
-  ctx.quadraticCurveTo(-16 * s + capeSwing, -11 * s, -13 * s + capeSwing, -1 * s);
-  ctx.lineTo(-2 * s, -10 * s);
+  ctx.moveTo(-5 * s, -20 * s);
+  ctx.quadraticCurveTo(-18 * s + cw, -12 * s, -15 * s + cw, -2 * s);
+  ctx.lineTo(-11 * s + cw * 0.7, -5 * s);
+  ctx.lineTo(-8 * s + cw * 0.5, -1 * s);
+  ctx.lineTo(-5 * s + cw * 0.3, -4 * s);
+  ctx.lineTo(-2 * s, -1 * s);
+  ctx.lineTo(0, -8 * s);
   ctx.closePath(); ctx.fill();
-  // 腿（走路交替摆动，站立并拢）
-  ctx.fillStyle = '#2b3a78';
-  ctx.save(); ctx.translate(-4 * s, -5 * s); ctx.rotate(legSwing);
-  roundRect(-2.4 * s, 0, 4.8 * s, 7 * s, 2.2 * s); ctx.fill(); ctx.restore();
-  ctx.save(); ctx.translate(4 * s, -5 * s); ctx.rotate(-legSwing);
-  roundRect(-2.4 * s, 0, 4.8 * s, 7 * s, 2.2 * s); ctx.fill(); ctx.restore();
-  // 身体（呼吸起伏）
-  ctx.save(); ctx.translate(0, -12 * s); ctx.scale(1 / breathe, breathe);
-  ctx.fillStyle = '#3f6fe8';
-  roundRect(-9 * s, -8 * s, 18 * s, 17 * s, 7 * s); ctx.fill();
-  ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.13)';
-  roundRect(-6 * s, -6 * s, 5 * s, 9 * s, 2.5 * s); ctx.fill();
-  ctx.restore();
-  // 头（描边+顶部高光+棕色头发）
-  ctx.fillStyle = '#ffd9b0';
-  ctx.beginPath(); ctx.arc(0, -28 * s, 11 * s, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.20)';
-  ctx.beginPath(); ctx.arc(-3.5 * s, -32 * s, 4 * s, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#8a4a1e';
-  ctx.beginPath(); ctx.arc(0, -31.5 * s, 10.2 * s, Math.PI * 1.02, Math.PI * 1.98); ctx.fill();
-  // 眼睛（面向朝向侧；会眨眼）
-  ctx.fillStyle = '#222';
-  ctx.beginPath(); ctx.ellipse(2.2 * s, -29 * s, 1.9 * s, 2.1 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(8.2 * s, -29 * s, 1.9 * s, 2.1 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
-  if (blink > 0.5) { // 眼神高光（眨眼时隐去）
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(2.9 * s, -29.8 * s, 0.8 * s, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(8.9 * s, -29.8 * s, 0.8 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1.6 * s; ctx.stroke();
+  ctx.fillStyle = 'rgba(140,30,50,0.5)'; // 暗红内衬
+  ctx.beginPath();
+  ctx.moveTo(-6 * s, -19 * s);
+  ctx.quadraticCurveTo(-15 * s + cw, -11 * s, -12.5 * s + cw, -4 * s);
+  ctx.lineTo(-8 * s, -9 * s);
+  ctx.closePath(); ctx.fill();
+  // 腿甲（走路交替摆+钢质靴头）
+  for (const dir of [-1, 1]) {
+    ctx.save(); ctx.translate(dir * 4 * s, -6 * s); ctx.rotate(dir * legSwing);
+    ctx.fillStyle = '#1c1430';
+    roundRect(-2.6 * s, 0, 5.2 * s, 8 * s, 2.2 * s); ctx.fill();
+    ctx.fillStyle = '#43336a'; ctx.fillRect(-2.6 * s, 5.6 * s, 5.2 * s, 2.4 * s);
+    ctx.restore();
   }
-  // 腮红
-  ctx.fillStyle = 'rgba(255,120,140,0.45)';
-  ctx.beginPath(); ctx.arc(-1 * s, -25.5 * s, 2.2 * s, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(11 * s, -25.5 * s, 2.2 * s, 0, Math.PI * 2); ctx.fill();
-  // 持剑手臂：挥剑斩击弧 / 待机小晃
+  // 暗甲躯干（呼吸起伏+胸甲板+腰带金扣+剑侧肩甲）
+  ctx.save(); ctx.translate(0, -13 * s); ctx.scale(1 / breathe, breathe);
+  ctx.fillStyle = '#241a3e';
+  roundRect(-9 * s, -9 * s, 18 * s, 18 * s, 6 * s); ctx.fill();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.fillStyle = '#2e2252';
+  roundRect(-6.5 * s, -7 * s, 13 * s, 11 * s, 4 * s); ctx.fill();
+  ctx.fillStyle = 'rgba(160,140,255,0.16)'; // 胸甲棱线高光
+  roundRect(-5 * s, -6 * s, 3.2 * s, 7 * s, 1.6 * s); ctx.fill();
+  ctx.fillStyle = '#120b22'; ctx.fillRect(-9 * s, 3 * s, 18 * s, 3.2 * s); // 腰带
+  ctx.fillStyle = '#c9a24a'; ctx.fillRect(-1.8 * s, 2.6 * s, 3.6 * s, 4 * s); // 金扣
+  ctx.fillStyle = '#2e2252'; // 肩甲
+  ctx.beginPath(); ctx.ellipse(8.5 * s, -7 * s, 5 * s, 3.4 * s, -0.35, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8a2030'; // 肩甲小尖刺
+  ctx.beginPath(); ctx.moveTo(11 * s, -9.5 * s); ctx.lineTo(15 * s, -13 * s); ctx.lineTo(12.5 * s, -7 * s); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 连帽斗篷（阴影罩脸+帽尖后垂+帽檐红边）
+  ctx.fillStyle = '#1a1132';
+  ctx.beginPath();
+  ctx.moveTo(-11 * s, -26 * s);
+  ctx.quadraticCurveTo(-11 * s, -41 * s, 1 * s, -41 * s);
+  ctx.quadraticCurveTo(12 * s, -41 * s, 11.5 * s, -27 * s);
+  ctx.quadraticCurveTo(8 * s, -21 * s, 0, -21 * s);
+  ctx.quadraticCurveTo(-8 * s, -21 * s, -11 * s, -26 * s);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+  ctx.fillStyle = '#1a1132'; // 帽尖后垂
+  ctx.beginPath();
+  ctx.moveTo(-10 * s, -34 * s);
+  ctx.quadraticCurveTo(-17 * s, -36 * s, -16 * s, -27 * s + capeSwing * 0.3);
+  ctx.lineTo(-10.5 * s, -29 * s);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#0d0818'; // 帽内阴影（脸）
+  ctx.beginPath(); ctx.ellipse(1.5 * s, -29 * s, 8.5 * s, 7.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+  // 发光双目（冷青色幽光+眨眼变暗）
+  const eyeGlow = ctx.createRadialGradient(3 * s, -29.5 * s, 0, 3 * s, -29.5 * s, 5.5 * s);
+  eyeGlow.addColorStop(0, 'rgba(125,240,255,0.5)');
+  eyeGlow.addColorStop(1, 'rgba(125,240,255,0)');
+  ctx.fillStyle = eyeGlow;
+  ctx.beginPath(); ctx.arc(3 * s, -29.5 * s, 5.5 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#7df0ff';
+  ctx.beginPath(); ctx.ellipse(1.2 * s, -29.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(7 * s, -29.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(150,35,55,0.65)'; ctx.lineWidth = 1.6 * s; // 帽檐暗红内衬线
+  ctx.beginPath(); ctx.moveTo(-8 * s, -24.5 * s); ctx.quadraticCurveTo(1 * s, -19.5 * s, 10 * s, -25 * s); ctx.stroke();
+  // 符文血刃魔剑手臂（挥剑斩击弧/待机小晃）
   const armA = swingP >= 0 ? (-1.7 + swingP * 2.6) : (-0.55 + Math.sin(now / 700) * 0.08);
   ctx.save();
-  ctx.translate(8 * s, -16 * s);
+  ctx.translate(8 * s, -17 * s);
   ctx.rotate(armA);
-  ctx.fillStyle = '#3f6fe8';
-  roundRect(-2.2 * s, -2 * s, 4.4 * s, 11 * s, 2.2 * s); ctx.fill(); // 手臂
-  ctx.fillStyle = '#ffd9b0';
-  ctx.beginPath(); ctx.arc(0, 10 * s, 2.6 * s, 0, Math.PI * 2); ctx.fill(); // 手
-  ctx.fillStyle = '#dfe6ff';
-  roundRect(-1.7 * s, 11 * s, 3.4 * s, 14 * s, 1.6 * s); ctx.fill(); // 剑身
-  ctx.fillStyle = '#8a6a2e'; ctx.fillRect(-4.4 * s, 10 * s, 8.8 * s, 2.6 * s); // 剑格
-  if (swingP >= 0) { // 挥剑残影弧线
-    ctx.globalAlpha = 0.4 * (1 - swingP);
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, 10 * s, 15 * s, -1.3, 0.5); ctx.stroke();
+  ctx.fillStyle = '#241a3e'; // 暗甲袖
+  roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
+  ctx.fillStyle = '#120b22'; // 暗手套
+  ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2b2440'; // 暗色剑身
+  roundRect(-1.9 * s, 11 * s, 3.8 * s, 15 * s, 1.6 * s); ctx.fill();
+  ctx.fillStyle = '#c93048'; // 血色刃线
+  ctx.fillRect(-0.7 * s, 12 * s, 1.4 * s, 13 * s);
+  ctx.fillStyle = '#c9a24a'; // 金剑格
+  ctx.fillRect(-5 * s, 9.6 * s, 10 * s, 2.8 * s);
+  ctx.fillStyle = '#3a2c5a'; // 剑柄
+  roundRect(-1.6 * s, 21.5 * s, 3.2 * s, 3.5 * s, 1.2 * s); ctx.fill();
+  if (swingP >= 0) { // 挥剑暗红残影
+    ctx.globalAlpha = 0.42 * (1 - swingP);
+    ctx.strokeStyle = '#c93048'; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, 12 * s, 15 * s, -1.3, 0.5); ctx.stroke();
     ctx.globalAlpha = 1;
   }
   ctx.restore();
