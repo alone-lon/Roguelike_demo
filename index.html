@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.24</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.25.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -200,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.24');
+LOG.info('游戏脚本加载完成 v0.25.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -333,8 +333,9 @@ let ZOOM = 1; // 世界层缩放：竖屏手机自动缩小画面看更多地图
 const vignette = document.createElement('canvas');
 
 // 自适应窗口尺寸（电脑/移动端通用）
+let qualityLv = 2; // 自适应画质档位 0低/1中/2高（独立变量：resize 在 game 初始化前就会跑）
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2); // 限制2倍，兼顾移动端性能
+  DPR = Math.min(window.devicePixelRatio || 1, [1.2, 1.6, 2][qualityLv]); // 自适应画质：低档降DPR减填充率
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * DPR; canvas.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -350,6 +351,23 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
+
+// 发光贴图缓存：径向渐变一次性预渲染，运行时 drawImage 替代每帧 createGradient（手机提速关键）
+function makeGlow(inner, outer) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const rg = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+  rg.addColorStop(0, inner); rg.addColorStop(1, outer);
+  g.fillStyle = rg; g.fillRect(0, 0, 128, 128);
+  return c;
+}
+const GLOWS = {
+  fire: makeGlow('rgba(255,170,60,0.62)', 'rgba(255,120,30,0)'),
+  orbP: makeGlow('rgba(201,160,255,0.85)', 'rgba(120,60,220,0.12)'),
+  orbR: makeGlow('rgba(255,176,201,0.85)', 'rgba(255,90,140,0.12)'),
+  hole: makeGlow('rgba(20,4,40,0.92)', 'rgba(90,40,170,0)'),
+  fog:  makeGlow('rgba(95,110,150,0.10)', 'rgba(125,95,195,0)'),
+};
 
 // ============================== 数值配置 ==============================
 const CONFIG = {
@@ -554,15 +572,26 @@ function vibrate(pattern) {
   if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) { /* 不支持则忽略 */ } }
 }
 
-// 伤害飘字
+// 伤害飘字（对象池 + 封顶60：防后期飘字海 GC 卡顿）
+const textPool = [];
 function addDmgText(x, y, text, color, size) {
-  dmgTexts.push({ x: x + rand(-12, 12), y: y - 20, vy: -55, life: 0.75, text: '' + text, color: color || '#fff', size: size || 16 });
+  if (dmgTexts.length >= 60) textPool.push(dmgTexts.shift()); // 满了回收最老的
+  const t = textPool.pop() || {};
+  t.x = x + rand(-12, 12); t.y = y - 20; t.vy = -55; t.life = 0.75;
+  t.text = '' + text; t.color = color || '#fff'; t.size = size || 16;
+  dmgTexts.push(t);
 }
-// 粒子
+// 粒子（对象池 + 按画质封顶：GC 与渲染双减负）
+const particlePool = [];
 function addParticles(x, y, color, n, speed) {
+  const maxP = [140, 280, 420][qualityLv];
+  if (particles.length + n > maxP) particles.splice(0, Math.max(0, particles.length + n - maxP));
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), s = rand(0.3, 1) * (speed || 130);
-    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: rand(0.3, 0.7), size: rand(2, 5), color });
+    const p = particlePool.pop() || {};
+    p.x = x; p.y = y; p.vx = Math.cos(a) * s; p.vy = Math.sin(a) * s - 40;
+    p.life = rand(0.3, 0.7); p.size = rand(2, 5); p.color = color;
+    particles.push(p);
   }
 }
 
@@ -1275,7 +1304,7 @@ function updateSpawner(dt) {
   const step = 1 + Math.floor(t / 180) * 0.25;            // 阶梯：每3分钟刷怪+25%
   const rate = (1.4 + t * 0.055) * step;                   // 线性增长的每秒刷怪量
   spawnBudget += rate * dt;
-  while (spawnBudget >= 1 && enemies.length < CONFIG.enemyCap) {
+  while (spawnBudget >= 1 && enemies.length < [140, 190, 230][qualityLv]) { // 上限随画质档位
     spawnBudget -= 1;
     // 怪物构成随时间解锁
     spawnEnemy(pickEnemyType(t)); // 怪物阵容随时间换血
@@ -1371,7 +1400,7 @@ function updateWeapons(dt) {
       for (let i = 0; i < n; i++) {
         const a = w.t * 1.9 + i * Math.PI * 2 / n;
         const ox = player.x + Math.cos(a) * orbitR, oy = player.y + Math.sin(a) * orbitR * 0.8;
-        for (const e of enemies) {
+        for (const e of nearEnemies(ox, oy, 80)) { // 网格近邻
           if (e.dead || e.hitT.orbit > 0) continue;
           if (dist2(e, { x: ox, y: oy }) < (13 + e.r) ** 2) {
             e.hitT.orbit = 0.45;
@@ -1389,7 +1418,7 @@ function updateWeapons(dt) {
       addParticles(player.x, player.y - 10, '#9fe8ff', 26, 250);
       addParticles(player.x, player.y - 10, '#e0f6ff', 10, 160);
       AudioSys.play('aoe');
-      for (const e of enemies) {
+      for (const e of nearEnemies(player.x, player.y, rad + 50)) { // 网格近邻
         if (e.dead || dist2(e, player) >= (rad + e.r) ** 2) continue;
         damageEnemy(e, weaponDmg(6.5, lv) * (w.evolved ? 1.15 : 1));
         e.slowT = 2.2; // 减速
@@ -1428,7 +1457,7 @@ function updateWeapons(dt) {
         const rad = (115 + lv * 8) * player.areaMult;
         const th = 0.05 + lv * 0.006 + (w.evolved ? 0.03 : 0); // 斩杀线：5%血+0.6%/级
         let did = false;
-        for (const e of enemies) {
+        for (const e of nearEnemies(player.x, player.y, rad + 50)) { // 网格近邻
           if (e.dead || e.type === 'boss' || e.miniBoss) continue;
           if (e.hp / e.maxHp < th && dist2(e, player) < (rad + e.r) ** 2) {
             addParticles(e.x, e.y - 10, '#b070ff', 12, 220);
@@ -1454,7 +1483,7 @@ function updateWeapons(dt) {
       for (let i = 0; i < n; i++) {
         const a = w.t * 2.4 + i * Math.PI * 2 / n;
         const sx = player.x + Math.cos(a) * orbitR, sy = player.y + Math.sin(a) * orbitR * 0.7; // 压扁成椭圆更像2.5D
-        for (const e of enemies) {
+        for (const e of nearEnemies(sx, sy, 80)) { // 网格近邻
           if (e.dead || e.hitT.scythe > 0) continue;
           const er = e.r + 14;
           if ((e.x - sx) ** 2 + (e.y - sy) ** 2 < er * er) {
@@ -1697,6 +1726,30 @@ function updateWeapons(dt) {
   }
 }
 
+// ============================== 敌人空间网格（命中检测只查近邻） ==============================
+const GRID_CELL = 140;
+const enemyGrid = new Map();
+function buildEnemyGrid() {
+  enemyGrid.clear();
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const k = Math.floor(e.x / GRID_CELL) + ',' + Math.floor(e.y / GRID_CELL);
+    let arr = enemyGrid.get(k);
+    if (!arr) enemyGrid.set(k, arr = []);
+    arr.push(e);
+  }
+}
+function nearEnemies(x, y, r) {
+  const out = [];
+  const c0 = Math.floor((x - r) / GRID_CELL), c1 = Math.floor((x + r) / GRID_CELL);
+  const r0 = Math.floor((y - r) / GRID_CELL), r1 = Math.floor((y + r) / GRID_CELL);
+  for (let cx = c0; cx <= c1; cx++) for (let cy = r0; cy <= r1; cy++) {
+    const arr = enemyGrid.get(cx + ',' + cy);
+    if (arr) for (const e of arr) out.push(e);
+  }
+  return out;
+}
+
 // 找最近敌人（武器索敌用）
 function nearestEnemy() {
   let best = null, bd = Infinity;
@@ -1763,7 +1816,7 @@ function updateSummons(dt) {
     z.tickCd -= dt;
     if (z.tickCd <= 0) {
       z.tickCd = 0.5;
-      for (const e of enemies) {
+      for (const e of nearEnemies(z.x, z.y, z.r + 50)) { // 网格近邻
         if (!e.dead && dist2(e, z) < (z.r + e.r) ** 2) damageEnemy(e, z.dmg, z.src || 'holyfire');
       }
     }
@@ -2501,11 +2554,7 @@ function render() {
   for (let i = 0; i < 3; i++) {
     const fx = ((W * (0.22 + 0.31 * i) + tFog * (12 + i * 7)) % (W + 400)) - 200;
     const fy = H * (0.28 + 0.24 * i) + Math.sin(tFog * 0.12 + i * 1.9) * 70;
-    const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, 210);
-    fg.addColorStop(0, 'rgba(95,110,150,0.10)');
-    fg.addColorStop(1, 'rgba(125,95,195,0)');
-    ctx.fillStyle = fg;
-    ctx.fillRect(fx - 210, fy - 210, 420, 420);
+    ctx.drawImage(GLOWS.fog, fx - 210, fy - 210, 420, 420); // 预渲染发光贴图
   }
 
   // ---- 毒圈（地面效果，画在实体下方）----
@@ -2523,11 +2572,7 @@ function render() {
   for (const z of fireZones) {
     const x = wx(z.x), y = wy(z.y);
     const flicker = 0.85 + Math.sin(z.life * 8) * 0.15; // 火焰闪烁
-    const g = ctx.createRadialGradient(x, y, 0, x, y, z.r);
-    g.addColorStop(0, 'rgba(255,170,60,0.62)');
-    g.addColorStop(1, 'rgba(255,120,30,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(x, y, z.r * flicker, z.r * 0.7 * flicker, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.drawImage(GLOWS.fire, x - z.r * flicker, y - z.r * 0.7 * flicker, z.r * 2 * flicker, z.r * 1.4 * flicker); // 预渲染发光贴图
     ctx.strokeStyle = 'rgba(255,200,110,0.65)'; ctx.lineWidth = 3; ctx.stroke(); // 火圈边线加浓
   }
 
@@ -2739,11 +2784,9 @@ function render() {
       for (let i = 0; i < n; i++) {
         const a = (w.t || 0) * 1.9 + i * Math.PI * 2 / n;
         const x = wx(player.x + Math.cos(a) * orbitR), y = wy(player.y + Math.sin(a) * orbitR * 0.8);
-        const g = ctx.createRadialGradient(x, y, 2, x, y, 13);
-        g.addColorStop(0, w.evolved ? '#ffb0c9' : '#c9a0ff');
-        g.addColorStop(1, w.evolved ? 'rgba(255,90,140,0.15)' : 'rgba(120,60,220,0.15)');
-        ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.drawImage(w.evolved ? GLOWS.orbR : GLOWS.orbP, x - 15, y - 15, 30, 30); // 预渲染发光贴图
+        ctx.fillStyle = w.evolved ? '#ffb0c9' : '#c9a0ff';
+        ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(x - 3, y - 4, 3, 0, Math.PI * 2); ctx.fill();
       }
@@ -2770,12 +2813,9 @@ function render() {
   for (const b of blackholes) {
     const x = wx(b.x), y = wy(b.y);
     const t2 = performance.now() / 300;
-    const rg = ctx.createRadialGradient(x, y, 4, x, y, b.r * 0.72);
-    rg.addColorStop(0, 'rgba(20,4,40,0.92)');
-    rg.addColorStop(0.55, 'rgba(90,40,170,0.30)');
-    rg.addColorStop(1, 'rgba(90,40,170,0)');
-    ctx.fillStyle = rg;
-    ctx.beginPath(); ctx.arc(x, y, b.r * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.drawImage(GLOWS.hole, x - b.r * 0.72, y - b.r * 0.72, b.r * 1.44, b.r * 1.44); // 预渲染发光贴图
+    ctx.fillStyle = 'rgba(20,4,40,0.85)';
+    ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(190,130,255,0.5)'; ctx.lineWidth = 2;
     for (let k = 0; k < 3; k++) {
       ctx.beginPath();
@@ -2935,12 +2975,23 @@ function renderHud() {
 
 // ============================== 主循环 ==============================
 let lastT = performance.now();
+let fpsAvg = 60, fpsCheckT = 0; // 自适应画质：滚动FPS观测
 function loop(now) {
   const dt = Math.min((now - lastT) / 1000, 0.05); // 钳制dt，防止切后台回来爆炸
   lastT = now;
 
+  // 自适应画质：FPS<45 降档、>57 回升（手机永不卡死，画质自动找平衡）
+  fpsAvg = fpsAvg * 0.95 + (1 / Math.max(dt, 0.001)) * 0.05;
+  fpsCheckT += dt;
+  if (fpsCheckT > 2) {
+    fpsCheckT = 0;
+    if (fpsAvg < 45 && qualityLv > 0) { qualityLv--; resize(); LOG.info('自适应画质降档 → ' + qualityLv); }
+    else if (fpsAvg > 57 && qualityLv < 2) { qualityLv++; resize(); }
+  }
+
   if (game.state === 'playing') {
     game.time += dt;
+    buildEnemyGrid(); // 本帧命中检测走网格近邻
     // 连杀计时衰减（2.5秒没击杀就断连）+ 动画缓动
     if (game.comboT > 0) { game.comboT -= dt; if (game.comboT <= 0) game.combo = 0; }
     game.comboScale += (0 - game.comboScale) * Math.min(1, dt * 6);
@@ -2957,7 +3008,7 @@ function loop(now) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       let hit = false;
       if (!b.hitSet) b.hitSet = new Set(); // 穿透去重：记录已命中的怪，防重复判定伤害
-      for (const e of enemies) {
+      for (const e of nearEnemies(b.x, b.y, 90)) { // 网格近邻：只查弹体周围
         if (e.dead || b.hitSet.has(e)) continue;
         const er = e.r + b.r;
         if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < er * er) {
@@ -2999,12 +3050,12 @@ function loop(now) {
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 260 * dt; p.life -= dt;
-      if (p.life <= 0) particles.splice(i, 1);
+      if (p.life <= 0) { particlePool.push(p); particles.splice(i, 1); }
     }
     for (let i = dmgTexts.length - 1; i >= 0; i--) {
       const t = dmgTexts[i];
       t.y += t.vy * dt; t.life -= dt;
-      if (t.life <= 0) dmgTexts.splice(i, 1);
+      if (t.life <= 0) { textPool.push(t); dmgTexts.splice(i, 1); }
     }
   }
 
