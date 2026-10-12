@@ -60,6 +60,11 @@
   .stats { margin:18px 0; color:#e8ddff; font-size:clamp(14px,3.6vw,19px); line-height:2; }
   .stats b { color:#ffd77a; font-size:1.25em; }
 
+  /* 升级三件套工具条（重掷/拉黑/跳过） */
+  .lvtools { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:16px; }
+  .lvtools .btn { width:auto; min-width:0; padding:11px 16px; font-size:15px; margin:0; }
+  .card.banish-mode { outline:3px solid rgba(255,90,110,0.85); cursor:crosshair; }
+
   /* 暂停按钮 */
   /* 商店关闭按钮：钉在右上角，任何屏幕都能看到 */
   #shopClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30;
@@ -86,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.18</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.19</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -97,8 +102,13 @@
 <!-- 升级 5 选 1 -->
 <div id="levelup" class="overlay hidden">
   <div class="title" style="font-size:clamp(22px,5vw,40px)">升 级 ！</div>
-  <div class="subtitle">选择一项强化（按 1-5 快捷键）</div>
+  <div class="subtitle" id="levelupTip">选择一项强化（按 1-5 快捷键）</div>
   <div class="cards" id="levelupCards"></div>
+  <div class="lvtools">
+    <button class="btn sub" id="rerollBtn">🎲 重掷 (3)</button>
+    <button class="btn sub" id="banishBtn">🚫 拉黑 (2)</button>
+    <button class="btn sub" id="skipBtn">⏭ 跳过 +15金</button>
+  </div>
 </div>
 
 <!-- 结算（胜利/失败/无尽终止通用） -->
@@ -190,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.18');
+LOG.info('游戏脚本加载完成 v0.19');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -431,6 +441,8 @@ const game = {
   bannerT: 0, bannerText: '',          // 演出横幅（Boss出场等）
   healAcc: 0, healTextCd: 0,           // 治疗量累计/回血飘字限频
   revives: 0,                          // 本局已复活次数（续命费用递增用）
+  rerolls: 3, banishes: 2,             // 升级三件套：重掷/拉黑剩余次数
+  banList: [], banishMode: false,      // 本局拉黑名单 / 拉黑模式开关
 };
 window.__game = game; // 调试/测试挂点
 
@@ -1777,7 +1789,9 @@ function generateOptions() {
   others.push({ type: 'heal', tag: '回复' });
   // 打乱顺序后，进化选项固定排最前
   for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
-  return evos.concat(others).slice(0, 5);
+  // 过滤本局拉黑的选项（拉黑=整条线不再出现：武器/被动/回血）
+  const filtered = others.filter(o => !game.banList.includes(o.type === 'heal' ? 'heal' : o.id));
+  return evos.concat(filtered).slice(0, 5);
 }
 
 function optionInfo(opt) {
@@ -1804,26 +1818,46 @@ function applyOption(opt) {
   else if (opt.type === 'heal') player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.35);
 }
 
-function openLevelUp() {
+function openLevelUp(skipFx) {
   game.state = 'levelup';
   joyReset(); // 界面切换重置摇杆，防止触摸状态残留
-  AudioSys.play('levelup');
-  addParticles(player.x, player.y - 20, '#ffe9a8', 26, 260); // 升级金光粒子爆发
+  if (!skipFx) { // 重掷/拉黑重绘时不重复撒金光音效
+    AudioSys.play('levelup');
+    addParticles(player.x, player.y - 20, '#ffe9a8', 26, 260); // 升级金光粒子爆发
+    game.banishMode = false;
+  }
+  document.getElementById('levelupTip').textContent = game.banishMode
+    ? '🚫 拉黑模式：点选要移出本局的选项（进化不可拉黑）'
+    : '选择一项强化（按 1-5 快捷键）';
   const cards = document.getElementById('levelupCards');
   cards.innerHTML = '';
   const opts = generateOptions();
   opts.forEach((opt, i) => {
     const info = optionInfo(opt);
     const div = document.createElement('div');
-    div.className = 'card' + (info.evo ? ' evo' : '');
+    div.className = 'card' + (info.evo ? ' evo' : '') + (game.banishMode ? ' banish-mode' : '');
     div.innerHTML = `<div class="icon">${info.icon}</div><div class="name">${info.name}</div>` +
       `<div class="desc">${info.desc}</div><div class="tag">${opt.tag}　[${i + 1}]</div>`;
     div.addEventListener('click', () => {
+      // 拉黑模式：点击=该选项整条线移出本局卡池
+      if (game.banishMode) {
+        if (opt.type === 'evolution') {
+          document.getElementById('levelupTip').textContent = '⚠ 进化不可拉黑！点别的选项试试';
+          return;
+        }
+        const key = opt.type === 'heal' ? 'heal' : opt.id;
+        if (!game.banList.includes(key)) game.banList.push(key);
+        game.banishes--; game.banishMode = false;
+        LOG.info('拉黑选项：' + key + '（剩余拉黑 ' + game.banishes + ' 次）');
+        AudioSys.play('pop');
+        openLevelUp(true);
+        return;
+      }
       applyOption(opt);
       game.pendingLevels = Math.max(0, game.pendingLevels - 1); // 消化一级连升
       joyReset(); // 关键修复：选完技能强制重置摇杆，解决"摇杆点不出来"
       if (game.pendingLevels > 0) {
-        openLevelUp(); // 还有连升：继续弹下一轮5选1
+        openLevelUp(true); // 还有连升：继续弹下一轮5选1
       } else {
         document.getElementById('levelup').classList.add('hidden');
         game.state = 'playing';
@@ -1832,6 +1866,42 @@ function openLevelUp() {
     cards.appendChild(div);
   });
   document.getElementById('levelup').classList.remove('hidden');
+  renderLevelTools();
+}
+
+// ============================== 升级三件套：重掷/拉黑/跳过 ==============================
+function renderLevelTools() {
+  const rb = document.getElementById('rerollBtn'), bb = document.getElementById('banishBtn');
+  rb.textContent = '🎲 重掷 (' + game.rerolls + ')';
+  bb.textContent = game.banishMode ? '🚫 点卡片拉黑…' : ('🚫 拉黑 (' + game.banishes + ')');
+  rb.style.opacity = game.rerolls > 0 ? '1' : '0.45';
+  bb.style.opacity = game.banishes > 0 ? '1' : '0.45';
+}
+
+function rerollLevelUp() {
+  if (game.rerolls <= 0) return;
+  game.rerolls--;
+  LOG.info('重掷升级选项（剩余 ' + game.rerolls + ' 次）');
+  AudioSys.play('pop');
+  openLevelUp(true);
+}
+
+function toggleBanishMode() {
+  if (game.banishes <= 0) return;
+  game.banishMode = !game.banishMode;
+  openLevelUp(true);
+}
+
+function skipLevelUp() {
+  // 跳过本次强化，补偿 15 金币
+  game.coins += 15;
+  addDmgText(player.x, player.y - 50, '跳过 +15金', '#ffd77a', 16);
+  game.pendingLevels = Math.max(0, game.pendingLevels - 1);
+  game.banishMode = false;
+  joyReset();
+  LOG.info('跳过升级选项，补偿 15 金币');
+  if (game.pendingLevels > 0) openLevelUp(true);
+  else { document.getElementById('levelup').classList.add('hidden'); game.state = 'playing'; }
 }
 
 // ============================== 掉落物处理 ==============================
@@ -1967,7 +2037,8 @@ function startGame() {
   game.endless = false; game.bossSpawned = false; game.boss = null;
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
-  game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0; joyReset();
+  game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
+  game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
@@ -2064,7 +2135,7 @@ function saveRunToSlot(n) {
   const snap = {
     v: 1,
     date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives },
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList] },
     player: {
       hp: player.hp,
       weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
@@ -2082,6 +2153,7 @@ function loadRunFromSlot(n) {
   game.time = s.game.time; game.kills = s.game.kills; game.damage = s.game.damage;
   game.level = s.game.level; game.xp = s.game.xp; game.xpNeed = s.game.xpNeed;
   game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
+  game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || [];
   player.weapons = {};
   for (const id in s.player.weapons) {
     giveWeapon(id);
@@ -2716,6 +2788,10 @@ document.getElementById('reviveGiveupBtn').addEventListener('click', () => {
   document.getElementById('revivePanel').classList.add('hidden');
   endRun(false, false);
 });
+// 升级三件套：重掷/拉黑/跳过
+document.getElementById('rerollBtn').addEventListener('click', rerollLevelUp);
+document.getElementById('banishBtn').addEventListener('click', toggleBanishMode);
+document.getElementById('skipBtn').addEventListener('click', skipLevelUp);
 
 // 真暂停：状态机冻结游戏循环，弹出暂停面板
 function togglePause() {
