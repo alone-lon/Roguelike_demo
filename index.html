@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.13.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.14</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.13.1');
+LOG.info('游戏脚本加载完成 v0.14');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -369,6 +369,8 @@ const PASSIVE_DEFS = {
   moveSpeed: { name:'移动速度', icon:'👟', desc:'移速 +8%' },
   projSpeed: { name:'投射速度', icon:'💨', desc:'弹速 +12%' },
   pickup:    { name:'拾取范围', icon:'🧲', desc:'拾取 +30%' },
+  lifesteal: { name:'生命汲取', icon:'🩸', desc:'伤害0.5%/级转生命' },
+  bloodthirst: { name:'嗜血', icon:'😈', desc:'击杀回复0.3生命/级' },
 };
 
 // 进化公式配置表 —— 预留扩展位：加新进化公式只需加一行
@@ -399,6 +401,7 @@ const game = {
   coinPulse: 0,                        // 金币拾取脉冲动画
   pendingLevels: 0,                    // 连升排队数：每级都给一次5选1
   bannerT: 0, bannerText: '',          // 演出横幅（Boss出场等）
+  healAcc: 0, healTextCd: 0,           // 治疗量累计/回血飘字限频
 };
 window.__game = game; // 调试/测试挂点
 
@@ -1406,6 +1409,17 @@ function damageEnemy(e, dmg) {
   if (Math.random() < 0.5) addParticles(e.x, e.y - e.r, '#fff', 2, 90); // 命中火花（概率触发省性能）
   AudioSys.play('hit');
   game.damage += finalDmg;
+  // 方案A 生命汲取：伤害的0.5%/级转生命（与DPS同步成长，天然平衡）
+  const steal = finalDmg * 0.005 * (player.passives.lifesteal || 0);
+  if (steal > 0) {
+    player.hp = Math.min(player.maxHp, player.hp + steal);
+    game.healAcc += steal;
+    if (game.healTextCd <= 0 && game.healAcc >= 1) { // 回血绿字限频合并
+      game.healTextCd = 0.6;
+      addDmgText(player.x, player.y - 44, '+' + Math.round(game.healAcc), '#7dff8a', 14);
+      game.healAcc = 0;
+    }
+  }
   addDmgText(e.x, e.y - e.r * 1.6, Math.round(finalDmg) + (crit ? '!' : ''),
     crit ? '#ffd77a' : (finalDmg > 40 ? '#ffb84d' : '#fff'), crit ? 24 : (finalDmg > 40 ? 20 : 15));
   if (e.hp <= 0) killEnemy(e);
@@ -1417,6 +1431,13 @@ function killEnemy(e) {
   // 连杀系统：持续击杀累积连杀数，屏幕中央跳大字
   game.combo++; game.comboT = 2.5; game.comboScale = 1;
   AudioSys.play('pop');
+  // 方案B 嗜血：击杀回复0.3生命/级（割得越爽回得越多）
+  const bt = 0.3 * (player.passives.bloodthirst || 0);
+  if (bt > 0) {
+    player.hp = Math.min(player.maxHp, player.hp + bt);
+    game.healAcc += bt;
+    if (Math.random() < 0.15) addParticles(player.x, player.y - 16, '#7dff8a', 1, 40); // 治疗绿光
+  }
   addParticles(e.x, e.y - 10, e.head, e.type === 'boss' ? 60 : 10, e.type === 'boss' ? 320 : 150);
   ghosts.push({ x: e.x, y: e.y, scale: e.scale, type: e.type, body: e.body, head: e.head, life: 0.35, maxLife: 0.35 }); // 死亡消散残影
   if (e.type === 'boss') {
@@ -1673,7 +1694,7 @@ function startGame() {
   game.endless = false; game.bossSpawned = false; game.boss = null;
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
-  game.pendingLevels = 0; joyReset();
+  game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
@@ -2205,6 +2226,7 @@ function loop(now) {
   // 计时器衰减（震屏/红闪在暂停时也会消散）
   game.shakeT = Math.max(0, game.shakeT - dt);
   game.bannerT = Math.max(0, game.bannerT - dt);
+  game.healTextCd = Math.max(0, game.healTextCd - dt);
   game.flashT = Math.max(0, game.flashT - dt);
 
   render();
