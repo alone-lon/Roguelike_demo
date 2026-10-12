@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.16</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.16.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.16');
+LOG.info('游戏脚本加载完成 v0.16.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1061,6 +1061,11 @@ const ENEMY_TYPES = {
   drake:   { hp: 1100, speed: 100, dmg: 38, r: 22, xp: 20, body: '#5c2430', head: '#e8506a', scale: 1.6 }, // 骨龙幼崽：全面强化（12:00起）
 };
 
+// 经验价值随时间通胀：与怪血成长同节奏（每90秒+1倍），怪变强经验同步涨，后期升级不掉队
+function xpMult() {
+  return 1 + game.time / 90;
+}
+
 // 怪物阵容随时间换血：每阶段解锁更强新怪，后期越来越强
 function pickEnemyType(t) {
   const pool = [['normal', 30], ['fast', 22], ['ranged', 14]];
@@ -1565,7 +1570,8 @@ function killEnemy(e) {
   }
   // 经验宝石（大怪掉大宝石）
   const gemSize = e.xp >= 8 ? 'big' : 'small';
-  gems.push({ x: e.x, y: e.y, vx: rand(-40, 40), vy: rand(-40, 40), value: e.xp, big: gemSize === 'big' });
+  // 经验随时间通胀：后期怪掉大经验（同步抵消怪血成长，升级节奏全程稳定）
+  gems.push({ x: e.x, y: e.y, vx: rand(-40, 40), vy: rand(-40, 40), value: Math.round(e.xp * xpMult()), big: gemSize === 'big' });
   // 特殊掉落
   const r = Math.random();
   if (e.type === 'gold') {
