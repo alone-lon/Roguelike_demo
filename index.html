@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.16.2</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.17</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.16.2');
+LOG.info('游戏脚本加载完成 v0.17');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -357,6 +357,10 @@ const WEAPON_DEFS = {
   rocket:   { name:'火箭筒',   icon:'🚀', desc:'火箭弹命中爆炸清场' },
   wolf:     { name:'暗影狼',   icon:'🐺', desc:'召唤狼群撕咬敌人' },
   ghost:    { name:'幽灵弓手', icon:'🏹', desc:'幽灵环绕自动放箭' },
+  orbit:    { name:'暗黑法球', icon:'🔮', desc:'法球环绕持续刮伤' },
+  nova:     { name:'寒冰新星', icon:'❄', desc:'周期冰爆减速冻结' },
+  blackhole:{ name:'重力黑洞', icon:'🕳', desc:'黑洞牵引聚怪轰炸' },
+  wither:   { name:'死亡凋零', icon:'🥀', desc:'处决残血敌人' },
 };
 
 // 被动配置表（8项，兼做进化材料）
@@ -388,6 +392,10 @@ const EVOLUTIONS = [
   { weapon:'rocket',   passive:'projSpeed', name:'多管火箭炮', icon:'🎇', desc:'火箭数量爆炸范围大增' },
   { weapon:'wolf',     passive:'moveSpeed', name:'狼群狂潮', icon:'🌪', desc:'狼群数量伤害大增' },
   { weapon:'ghost',    passive:'atkSpeed',  name:'幻影游侠团', icon:'👥', desc:'幽灵弓手数量攻速大增' },
+  { weapon:'orbit',    passive:'atkSpeed',  name:'湮灭星环', icon:'💫', desc:'法球+2并吸血' },
+  { weapon:'nova',     passive:'cdr',       name:'绝对零度', icon:'🧊', desc:'必冻结并破冰溅射' },
+  { weapon:'blackhole',passive:'area',      name:'事件视界', icon:'🌀', desc:'引力大增爆炸更强' },
+  { weapon:'wither',   passive:'dmg',       name:'灵魂收割', icon:'⚰', desc:'处决引发连锁爆炸' },
 ];
 
 // ============================== 游戏状态 ==============================
@@ -418,6 +426,7 @@ let enemies = [], bullets = [], eBullets = [], gems = [], drops = [], particles 
 let minions = [], zaps = [], fireZones = []; // 召唤小骷髅 / 闪电链特效 / 圣火区域
 let ghosts = []; // 死亡消散残影
 let meteors = []; // 陨石术：高空坠落弹体
+let blackholes = []; // 重力黑洞：牵引聚怪区域
 let turrets = []; // 幽灵弓手（召唤炮台）
 
 // ============================== 存档（localStorage） ==============================
@@ -1173,6 +1182,90 @@ function updateWeapons(dt) {
       }
     }
 
+    // ---- 暗黑法球：环绕旋转持续刮伤（进化：湮灭星环 +2球吸血）----
+    if (id === 'orbit') {
+      const n = 3 + Math.floor(lv / 3) + (w.evolved ? 2 : 0);
+      const orbitR = (92 + lv * 4) * player.areaMult;
+      const dmg = weaponDmg(2.6, lv);
+      for (let i = 0; i < n; i++) {
+        const a = w.t * 1.9 + i * Math.PI * 2 / n;
+        const ox = player.x + Math.cos(a) * orbitR, oy = player.y + Math.sin(a) * orbitR * 0.8;
+        for (const e of enemies) {
+          if (e.dead || e.hitT.orbit > 0) continue;
+          if (dist2(e, { x: ox, y: oy }) < (13 + e.r) ** 2) {
+            e.hitT.orbit = 0.45;
+            damageEnemy(e, dmg);
+            if (w.evolved) player.hp = Math.min(player.maxHp, player.hp + dmg * 0.05); // 湮灭星环吸血
+          }
+        }
+      }
+    }
+
+    // ---- 寒冰新星：周期冰爆减速+冻结（进化：绝对零度 必冻结+破冰溅射）----
+    if (id === 'nova' && w.cd <= 0) {
+      w.cd = Math.max(1.6, 3.4 - lv * 0.18) * player.cdMult / player.atkSpeedMult;
+      const rad = (150 + lv * 10) * player.areaMult * (w.evolved ? 1.25 : 1);
+      addParticles(player.x, player.y - 10, '#9fe8ff', 26, 250);
+      addParticles(player.x, player.y - 10, '#e0f6ff', 10, 160);
+      AudioSys.play('aoe');
+      for (const e of enemies) {
+        if (e.dead || dist2(e, player) >= (rad + e.r) ** 2) continue;
+        damageEnemy(e, weaponDmg(6.5, lv) * (w.evolved ? 1.15 : 1));
+        e.slowT = 2.2; // 减速
+        const freezeP = w.evolved ? 1 : (0.12 + lv * 0.012);
+        if (Math.random() < freezeP) e.frozenT = w.evolved ? 0.9 : 1.3; // 冻结定身
+        if (w.evolved && e.dead) { // 破冰溅射：被冻碎的敌人波及周围
+          for (const e2 of enemies) if (!e2.dead && dist2(e2, e) < 90 * 90) damageEnemy(e2, weaponDmg(3, lv));
+        }
+      }
+      addDmgText(player.x, player.y - 46, '冰爆', '#9fe8ff', 15);
+    }
+
+    // ---- 重力黑洞：聚怪持续伤害+消散爆炸（进化：事件视界 强引力+大爆炸）----
+    if (id === 'blackhole' && w.cd <= 0) {
+      w.cd = Math.max(3.2, 6.5 - lv * 0.3) * player.cdMult / player.atkSpeedMult;
+      const target = nearestEnemy();
+      const bx = target ? target.x + rand(-40, 40) : player.x + rand(-150, 150);
+      const by = target ? target.y + rand(-40, 40) : player.y + rand(-110, 110);
+      blackholes.push({
+        x: bx, y: by,
+        r: (120 + lv * 9) * player.areaMult * (w.evolved ? 1.2 : 1),
+        life: 3.4, tick: 0.5,
+        pull: (w.evolved ? 260 : 170) + lv * 6,
+        dot: weaponDmg(3.2, lv),
+        boom: weaponDmg(11, lv) * (w.evolved ? 1.5 : 1),
+      });
+      AudioSys.play('aoe');
+    }
+
+    // ---- 死亡凋零：处决光环，低血量敌人直接斩杀（进化：灵魂收割 处决爆炸）----
+    if (id === 'wither') {
+      w.tick = (w.tick || 0) - dt;
+      w.textT = (w.textT || 0) - dt;
+      if (w.tick <= 0) {
+        w.tick = 0.35;
+        const rad = (115 + lv * 8) * player.areaMult;
+        const th = 0.05 + lv * 0.006 + (w.evolved ? 0.03 : 0); // 斩杀线：5%血+0.6%/级
+        let did = false;
+        for (const e of enemies) {
+          if (e.dead || e.type === 'boss') continue;
+          if (e.hp / e.maxHp < th && dist2(e, player) < (rad + e.r) ** 2) {
+            addParticles(e.x, e.y - 10, '#b070ff', 12, 220);
+            damageEnemy(e, e.hp + 1); // 处决（用剩余血量防吸血溢出）
+            did = true;
+            if (w.evolved) { // 灵魂收割：处决引爆波及周围
+              for (const e2 of enemies) if (!e2.dead && dist2(e2, e) < 88 * 88) damageEnemy(e2, weaponDmg(9, lv));
+            }
+          }
+        }
+        if (did && w.textT <= 0) {
+          w.textT = 1.2;
+          addDmgText(player.x, player.y - 50, '灵魂收割！', '#c9a0ff', 16);
+          AudioSys.play('pop');
+        }
+      }
+    }
+
     // ---- 噬魂血镰：环绕旋转（进化：亡者血镰 吸血+大范围）----
     if (id === 'scythe') {
       let n = 1 + Math.floor(lv / 2) + (w.evolved ? 2 : 0);
@@ -1436,6 +1529,28 @@ function nearestEnemy() {
 
 // 召唤物与地面区域更新：骷髅追敌、圣火灼烧、闪电特效衰减
 function updateSummons(dt) {
+  // 重力黑洞：牵引聚怪 + 持续伤害，消散时爆炸
+  for (let i = blackholes.length - 1; i >= 0; i--) {
+    const b = blackholes[i];
+    b.life -= dt; b.tick -= dt;
+    if (b.tick <= 0) {
+      b.tick = 0.5;
+      for (const e of enemies) if (!e.dead && dist2(e, b) < b.r * b.r) damageEnemy(e, b.dot);
+    }
+    for (const e of enemies) { // 引力牵引（Boss太重拉不动）
+      if (e.dead || e.type === 'boss') continue;
+      const dx = b.x - e.x, dy = b.y - e.y, d = Math.hypot(dx, dy) || 1;
+      if (d < b.r * 1.15) { e.x += dx / d * b.pull * dt; e.y += dy / d * b.pull * dt; }
+    }
+    if (b.life <= 0) {
+      addParticles(b.x, b.y, '#a06fe0', 26, 300);
+      addParticles(b.x, b.y, '#2a1a4a', 16, 200);
+      for (const e of enemies) if (!e.dead && dist2(e, b) < (b.r * 1.1) ** 2) damageEnemy(e, b.boom);
+      addDmgText(b.x, b.y - 30, '湮灭', '#c9a0ff', 17);
+      AudioSys.play('aoe');
+      blackholes.splice(i, 1);
+    }
+  }
   // 小骷髅：转向插值追踪最近敌人，接触伤害，寿命耗尽消散
   for (let i = minions.length - 1; i >= 0; i--) {
     const m = minions[i];
@@ -1743,8 +1858,8 @@ function updateEnemies(dt) {
   for (const e of enemies) {
     if (e.dead) continue;
     // 减速计时
-    const slow = e.slowT > 0 ? 0.55 : 1;
-    e.slowT -= dt;
+    const slow = e.frozenT > 0 ? 0.12 : (e.slowT > 0 ? 0.55 : 1); // 冻结几乎定身
+    e.slowT -= dt; e.frozenT = Math.max(0, (e.frozenT || 0) - dt);
     e.flash -= dt;
     for (const k in e.hitT) e.hitT[k] -= dt;
 
@@ -2137,6 +2252,30 @@ function render() {
         ctx.restore();
       }
     }
+    // 暗黑法球（环绕）
+    if (id === 'orbit') {
+      const n = 3 + Math.floor(w.level / 3) + (w.evolved ? 2 : 0);
+      const orbitR = (92 + w.level * 4) * player.areaMult;
+      for (let i = 0; i < n; i++) {
+        const a = (w.t || 0) * 1.9 + i * Math.PI * 2 / n;
+        const x = wx(player.x + Math.cos(a) * orbitR), y = wy(player.y + Math.sin(a) * orbitR * 0.8);
+        const g = ctx.createRadialGradient(x, y, 2, x, y, 13);
+        g.addColorStop(0, w.evolved ? '#ffb0c9' : '#c9a0ff');
+        g.addColorStop(1, w.evolved ? 'rgba(255,90,140,0.15)' : 'rgba(120,60,220,0.15)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(x - 3, y - 4, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // 死亡凋零光环
+    if (id === 'wither') {
+      const rad = (115 + w.level * 8) * player.areaMult;
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+      ctx.strokeStyle = `rgba(150,80,255,${0.16 + pulse * 0.1})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(wx(player.x), wy(player.y), rad, rad * 0.62, 0, 0, Math.PI * 2); ctx.stroke();
+    }
     // 回旋锤
     if (id === 'hammer' && w.hammerOut) {
       const x = wx(w.hx), y = wy(w.hy);
@@ -2146,6 +2285,25 @@ function render() {
       ctx.fillStyle = '#7a5b2e'; ctx.fillRect(-3, -20, 6, 14);
       ctx.restore();
     }
+  }
+  // 重力黑洞（旋臂暗紫漩涡）
+  for (const b of blackholes) {
+    const x = wx(b.x), y = wy(b.y);
+    const t2 = performance.now() / 300;
+    const rg = ctx.createRadialGradient(x, y, 4, x, y, b.r * 0.72);
+    rg.addColorStop(0, 'rgba(20,4,40,0.92)');
+    rg.addColorStop(0.55, 'rgba(90,40,170,0.30)');
+    rg.addColorStop(1, 'rgba(90,40,170,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(x, y, b.r * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(190,130,255,0.5)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) {
+      ctx.beginPath();
+      ctx.arc(x, y, 20 + k * 14, t2 + k * 2, t2 + k * 2 + 2.2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#0a0214'; // 黑洞核心
+    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill();
   }
   // 敌方弹幕
   for (const b of eBullets) {
