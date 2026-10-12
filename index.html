@@ -86,8 +86,9 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.17</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.18</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
+  <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
@@ -116,8 +117,27 @@
   <div class="subtitle">歇口气，怪还在原地等你</div>
   <div>
     <button class="btn" id="resumeBtn">继 续 游 戏</button>
+    <button class="btn green" id="saveQuitBtn">💾 保 存 并 退 出</button>
     <button class="btn sub" id="quitBtn">回 主 菜 单</button>
   </div>
+</div>
+
+<!-- 复活面板（死亡后花金币续命，费用逐次递增） -->
+<div id="revivePanel" class="overlay hidden">
+  <div class="title" style="font-size:clamp(22px,6vw,44px)">💀 你 倒 下 了</div>
+  <div class="subtitle" id="reviveInfo">是否花金币复活？</div>
+  <div>
+    <button class="btn green" id="reviveBtn">💰 复 活</button>
+    <button class="btn sub" id="reviveGiveupBtn">直 接 结 算</button>
+  </div>
+</div>
+
+<!-- 存档槽位面板（保存/读取共用，3 档位） -->
+<div id="slotPanel" class="overlay hidden">
+  <div class="title" style="font-size:clamp(20px,5vw,38px)" id="slotTitle">存 档</div>
+  <div class="subtitle" id="slotTip">选择一个槽位</div>
+  <div class="cards" id="slotCards"></div>
+  <button class="btn sub" id="slotBack">返 回</button>
 </div>
 
 <!-- 升级商店（局外永久属性，下局生效） -->
@@ -170,7 +190,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.17');
+LOG.info('游戏脚本加载完成 v0.18');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -410,6 +430,7 @@ const game = {
   pendingLevels: 0,                    // 连升排队数：每级都给一次5选1
   bannerT: 0, bannerText: '',          // 演出横幅（Boss出场等）
   healAcc: 0, healTextCd: 0,           // 治疗量累计/回血飘字限频
+  revives: 0,                          // 本局已复活次数（续命费用递增用）
 };
 window.__game = game; // 调试/测试挂点
 
@@ -1946,7 +1967,7 @@ function startGame() {
   game.endless = false; game.bossSpawned = false; game.boss = null;
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
-  game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; joyReset();
+  game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
@@ -1986,8 +2007,129 @@ function victory() {
   endRun(true, false);
 }
 function gameOver() {
-  LOG.info('死亡结算：存活 ' + fmtTime(game.time) + '，击杀 ' + game.kills + '，等级 ' + game.level);
-  endRun(false, false);
+  // 死亡先进复活面板（花金币续命），不直接结算
+  LOG.info('死亡：存活 ' + fmtTime(game.time) + '，击杀 ' + game.kills + '，等级 ' + game.level + '，第' + (game.revives + 1) + '条命');
+  showRevivePanel();
+}
+
+// ============================== 金币续命（费用逐次递增） ==============================
+function reviveCost() { return Math.floor(100 * Math.pow(3, game.revives)); } // 100/300/900/2700…
+
+function showRevivePanel() {
+  game.state = 'settle'; // 冻结游戏循环
+  const cost = reviveCost(), can = game.coins >= cost;
+  document.getElementById('reviveInfo').innerHTML = can
+    ? `复活回 60% 血 + 3 秒无敌，本局已复活 <b>${game.revives}</b> 次<br>本次花费 <b>${cost}</b> 金币（钱包 <b>${game.coins}</b>）`
+    : `复活需要 <b>${cost}</b> 金币，钱包只有 <b>${game.coins}</b>，不够了…`;
+  const btn = document.getElementById('reviveBtn');
+  btn.textContent = can ? `💰 花费 ${cost} 金币复活` : '💸 金币不足';
+  btn.style.opacity = can ? '1' : '0.45';
+  document.getElementById('revivePanel').classList.remove('hidden');
+  document.getElementById('pauseBtn').classList.add('hidden');
+}
+
+function doRevive() {
+  const cost = reviveCost();
+  if (game.coins < cost) return; // 金币不足不响应
+  game.coins -= cost; game.revives++;
+  player.hp = Math.round(player.maxHp * 0.6);
+  player.iframe = 3; // 无敌3秒喘息
+  // 复活冲击波：近身怪推开并受创，防止落地被秒
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x - player.x, e.y - player.y);
+    if (d < 320 && e.type !== 'boss') {
+      const k = (320 - d) * 1.1;
+      e.x += (e.x - player.x) / (d || 1) * k;
+      e.y += (e.y - player.y) / (d || 1) * k;
+      damageEnemy(e, 150);
+    }
+  }
+  addParticles(player.x, player.y - 10, '#ffd77a', 30, 320);
+  game.bannerText = '⚡ 复 活 ！ ⚡'; game.bannerT = 1.8;
+  AudioSys.play('chest');
+  game.state = 'playing';
+  document.getElementById('revivePanel').classList.add('hidden');
+  document.getElementById('pauseBtn').classList.remove('hidden');
+  LOG.info('复活成功：花费 ' + cost + ' 金币，剩余 ' + game.coins);
+}
+
+// ============================== 局内存档（3 档位，读取即焚） ==============================
+const RUN_SLOT_PREFIX = 'roguelike_demo_runslot_';
+function readRunSlot(n) { try { return JSON.parse(localStorage.getItem(RUN_SLOT_PREFIX + n)); } catch (e) { return null; } }
+
+function saveRunToSlot(n) {
+  // 快照局内进度；金币在钱包实时入账不进快照（防读档覆盖后续收入）
+  const d = new Date();
+  const snap = {
+    v: 1,
+    date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives },
+    player: {
+      hp: player.hp,
+      weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
+      passives: { ...player.passives },
+    },
+  };
+  try { localStorage.setItem(RUN_SLOT_PREFIX + n, JSON.stringify(snap)); writeSave(); } catch (e) { /* 隐私模式忽略 */ }
+  LOG.info('保存局内进度到槽位' + n + '（Lv' + game.level + ' ' + fmtTime(game.time) + '）');
+}
+
+function loadRunFromSlot(n) {
+  const s = readRunSlot(n);
+  if (!s) return;
+  startGame(); // 整局重置后灌入快照
+  game.time = s.game.time; game.kills = s.game.kills; game.damage = s.game.damage;
+  game.level = s.game.level; game.xp = s.game.xp; game.xpNeed = s.game.xpNeed;
+  game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
+  player.weapons = {};
+  for (const id in s.player.weapons) {
+    giveWeapon(id);
+    player.weapons[id].level = s.player.weapons[id].level;
+    player.weapons[id].evolved = s.player.weapons[id].evolved;
+  }
+  player.passives = { ...s.player.passives };
+  recomputeStats();
+  player.hp = Math.min(s.player.hp, player.maxHp);
+  try { localStorage.removeItem(RUN_SLOT_PREFIX + n); } catch (e) { /* 忽略 */ } // 读取即焚
+  LOG.info('读取槽位' + n + '继续冒险（存档已销毁）');
+}
+
+function openSlotPanel(mode) {
+  // mode: 'save' 保存并退出 | 'load' 读取继续
+  const box = document.getElementById('slotCards');
+  document.getElementById('slotTitle').textContent = mode === 'save' ? '💾 保 存 进 度' : '📂 读 取 存 档';
+  document.getElementById('slotTip').textContent = mode === 'save'
+    ? '保存本局进度并退出（存档读取一次后自动销毁；死亡时无法保存）'
+    : '选择要继续的冒险（读取后该存档自动销毁）';
+  box.innerHTML = '';
+  for (let n = 1; n <= 3; n++) {
+    const s = readRunSlot(n);
+    const div = document.createElement('div');
+    div.className = 'card';
+    if (s) {
+      div.innerHTML = `<div class="icon">💾</div><div class="name">槽位 ${n}</div>` +
+        `<div class="desc">Lv ${s.game.level}　${fmtTime(s.game.time)}<br>${s.date}</div>` +
+        `<div class="tag">${mode === 'save' ? '点击覆盖保存' : '点击读取'}</div>`;
+    } else {
+      div.innerHTML = `<div class="icon">📭</div><div class="name">槽位 ${n}</div><div class="desc">空槽位</div>` +
+        `<div class="tag">${mode === 'save' ? '点击保存' : '无存档'}</div>`;
+    }
+    div.addEventListener('click', () => {
+      if (mode === 'save') {
+        saveRunToSlot(n);
+        document.getElementById('slotPanel').classList.add('hidden');
+        document.getElementById('pausePanel').classList.add('hidden');
+        LOG.info('保存并退出本局');
+        showMenu();
+      } else if (s) {
+        loadRunFromSlot(n);
+        document.getElementById('slotPanel').classList.add('hidden');
+      }
+    });
+    box.appendChild(div);
+  }
+  document.getElementById('slotPanel').classList.remove('hidden');
 }
 
 function fmtTime(t) {
@@ -2556,6 +2698,23 @@ document.getElementById('quitBtn').addEventListener('click', () => {
   document.getElementById('pausePanel').classList.add('hidden');
   LOG.info('中途退出本局');
   showMenu();
+});
+// 保存并退出：弹槽位面板（仅存活时可存，死亡无法保存）
+document.getElementById('saveQuitBtn').addEventListener('click', () => {
+  document.getElementById('pausePanel').classList.add('hidden');
+  openSlotPanel('save');
+});
+// 主菜单：继续存档
+document.getElementById('continueBtn').addEventListener('click', () => openSlotPanel('load'));
+document.getElementById('slotBack').addEventListener('click', () => {
+  document.getElementById('slotPanel').classList.add('hidden');
+  if (game.state === 'paused') document.getElementById('pausePanel').classList.remove('hidden');
+});
+// 复活面板：花钱续命 / 直接结算
+document.getElementById('reviveBtn').addEventListener('click', doRevive);
+document.getElementById('reviveGiveupBtn').addEventListener('click', () => {
+  document.getElementById('revivePanel').classList.add('hidden');
+  endRun(false, false);
 });
 
 // 真暂停：状态机冻结游戏循环，弹出暂停面板
