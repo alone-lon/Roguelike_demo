@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.19.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.20</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -200,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.19.1');
+LOG.info('游戏脚本加载完成 v0.20');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -443,6 +443,7 @@ const game = {
   revives: 0,                          // 本局已复活次数（续命费用递增用）
   rerolls: 3, banishes: 2,             // 升级三件套：重掷/拉黑剩余次数
   banList: [], banishMode: false,      // 本局拉黑名单 / 拉黑模式开关
+  nextBloodmoon: 180, bloodT: 0, bloodmoonCount: 0, // 血月事件：下次触发时刻/夜空计时/波次
 };
 window.__game = game; // 调试/测试挂点
 
@@ -1160,6 +1161,20 @@ function updateSpawner(dt) {
   if (specialCd.elite <= 0) { specialCd.elite = Math.max(18, 48 - t / 30); spawnEnemy('elite'); }
   specialCd.gold -= dt;
   if (specialCd.gold <= 0) { specialCd.gold = rand(40, 70); spawnEnemy('gold'); }
+
+  // 血月事件：每3分钟一波精英潮（节奏高潮）——横幅+血月夜空30秒+磁铁馈赠
+  if (t >= game.nextBloodmoon) {
+    game.nextBloodmoon += 180;
+    game.bloodmoonCount++;
+    game.bloodT = 30;
+    game.bannerText = '🩸 血 月 降 临 · 精 英 来 袭 🩸'; game.bannerT = 2.8;
+    game.flashT = 0.8; shake(10, 0.6);
+    AudioSys.play('boss'); vibrate([80, 60, 80]);
+    const n = Math.min(8, 3 + game.bloodmoonCount); // 精英潮随波次加码，上限8只
+    for (let i = 0; i < n; i++) spawnEnemy('elite');
+    drops.push({ type: 'magnet', x: player.x + rand(-50, 50), y: player.y + rand(-50, 50), t: 0 }); // 血月馈赠
+    LOG.info('血月第' + game.bloodmoonCount + '波：精英×' + n);
+  }
 
   // 15分钟Boss压场
   if (!game.bossSpawned && t >= CONFIG.bossTime) {
@@ -2038,7 +2053,8 @@ function startGame() {
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
-  game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false; joyReset();
+  game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false;
+  game.nextBloodmoon = 180; game.bloodT = 0; game.bloodmoonCount = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
@@ -2135,7 +2151,7 @@ function saveRunToSlot(n) {
   const snap = {
     v: 1,
     date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList] },
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount },
     player: {
       hp: player.hp,
       weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
@@ -2154,6 +2170,7 @@ function loadRunFromSlot(n) {
   game.level = s.game.level; game.xp = s.game.xp; game.xpNeed = s.game.xpNeed;
   game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
   game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || [];
+  game.nextBloodmoon = s.game.nextBloodmoon || 180; game.bloodmoonCount = s.game.bloodmoonCount || 0;
   player.weapons = {};
   for (const id in s.player.weapons) {
     giveWeapon(id);
@@ -2550,6 +2567,15 @@ function render() {
   // ---- 暗角氛围（世界层之上、UI之下）----
   ctx.drawImage(vignette, 0, 0, W, H);
 
+  // ---- 血月夜空（血月事件期间红光笼罩，脉冲呼吸）----
+  if (game.bloodT > 0) {
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 350);
+    ctx.fillStyle = `rgba(140,16,32,${0.10 + 0.08 * pulse})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(255,60,80,${0.05 + 0.05 * pulse})`; // 顶部血月光
+    ctx.fillRect(0, 0, W, H * 0.35);
+  }
+
   // ---- 受击红闪 / Boss警告红屏 ----
   if (game.flashT > 0) {
     ctx.fillStyle = `rgba(255,40,60,${clamp(game.flashT * 0.35, 0, 0.35)})`;
@@ -2739,6 +2765,7 @@ function loop(now) {
   game.shakeT = Math.max(0, game.shakeT - dt);
   game.bannerT = Math.max(0, game.bannerT - dt);
   game.healTextCd = Math.max(0, game.healTextCd - dt);
+  game.bloodT = Math.max(0, game.bloodT - dt);
   game.flashT = Math.max(0, game.flashT - dt);
 
   render();
