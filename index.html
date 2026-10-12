@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.20</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.21</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -200,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.20');
+LOG.info('游戏脚本加载完成 v0.21');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -444,6 +444,7 @@ const game = {
   rerolls: 3, banishes: 2,             // 升级三件套：重掷/拉黑剩余次数
   banList: [], banishMode: false,      // 本局拉黑名单 / 拉黑模式开关
   nextBloodmoon: 180, bloodT: 0, bloodmoonCount: 0, // 血月事件：下次触发时刻/夜空计时/波次
+  mbStage: 0,                              // 阶段小Boss进度（0~4）
 };
 window.__game = game; // 调试/测试挂点
 
@@ -993,6 +994,106 @@ function drawMonster(x, y, scale, e) {
     ctx.strokeStyle = head; ctx.lineWidth = 2 * s; // 骨尾
     ctx.beginPath(); ctx.moveTo(x, y - 10 * s); ctx.quadraticCurveTo(x + 16 * s, y - 4 * s, x + 22 * s, y - 12 * s); ctx.stroke();
   }
+  // ——— 阶段小Boss：四只独立形象 ———
+  if (e.type === 'mb_bandit') {
+    // 狂暴酋长：红壮躯体 + 双角战盔 + 肩甲 + 巨斧
+    const br = 17 * s;
+    ctx.fillStyle = OUT;
+    ctx.beginPath(); ctx.ellipse(x, y - 2, br * 1.3, br * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.ellipse(x, y - 16 * s, br, br * 1.1, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = head; // 头盔
+    ctx.beginPath(); ctx.arc(x, y - 32 * s, 11 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 10 * s, y - 38 * s); ctx.lineTo(x - 17 * s, y - 50 * s); ctx.lineTo(x - 5 * s, y - 40 * s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 10 * s, y - 38 * s); ctx.lineTo(x + 17 * s, y - 50 * s); ctx.lineTo(x + 5 * s, y - 40 * s); ctx.closePath(); ctx.fill();
+    drawCreatureFace(x, y - 31 * s, s * 1.05);
+    ctx.fillStyle = '#5c1f1f'; // 肩甲
+    ctx.beginPath(); ctx.ellipse(x - 16 * s, y - 20 * s, 7 * s, 5 * s, -0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + 16 * s, y - 20 * s, 7 * s, 5 * s, 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7a5b2e'; // 巨斧柄
+    ctx.fillRect(x + 19 * s, y - 44 * s, 3.5 * s, 30 * s);
+    ctx.fillStyle = '#c9c2b0'; // 斧刃
+    ctx.beginPath(); ctx.moveTo(x + 22 * s, y - 44 * s); ctx.lineTo(x + 34 * s, y - 38 * s); ctx.lineTo(x + 22 * s, y - 31 * s); ctx.closePath(); ctx.fill();
+  } else if (e.type === 'mb_eye') {
+    // 深渊魔眼：巨眼球 + 环瞳 + 触须漂浮
+    const fl = Math.sin(phase * 1.6) * 3.5 * s;
+    ctx.fillStyle = OUT;
+    ctx.beginPath(); ctx.ellipse(x, y + 6 * s, 16 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = body; ctx.lineWidth = 3.5 * s; ctx.lineCap = 'round'; // 触须
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + dir * 12 * s, y - 8 * s);
+      ctx.quadraticCurveTo(x + dir * 26 * s, y + 2 * s + fl, x + dir * 20 * s, y + 14 * s);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#f0eaff'; // 眼球
+    ctx.beginPath(); ctx.arc(x, y - 18 * s + fl, 17 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(18,7,38,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = body; // 环瞳
+    ctx.beginPath(); ctx.arc(x, y - 18 * s + fl, 9.5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#12071f'; // 瞳孔
+    ctx.beginPath(); ctx.arc(x, y - 18 * s + fl, 4.5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; // 高光
+    ctx.beginPath(); ctx.arc(x - 5 * s, y - 23 * s + fl, 3 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(61,42,102,0.8)'; ctx.lineWidth = 2 * s; // 怒纹
+    ctx.beginPath(); ctx.moveTo(x - 12 * s, y - 33 * s + fl); ctx.lineTo(x - 4 * s, y - 29 * s + fl); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 12 * s, y - 33 * s + fl); ctx.lineTo(x + 4 * s, y - 29 * s + fl); ctx.stroke();
+  } else if (e.type === 'mb_spider') {
+    // 蛛后：椭圆蛛体 + 8条腿 + 多眼排 + 毒牙
+    const leg = Math.sin(phase * 2) * 2 * s;
+    ctx.fillStyle = OUT;
+    ctx.beginPath(); ctx.ellipse(x, y - 2, 20 * s, 7 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = body; ctx.lineWidth = 3.2 * s; ctx.lineCap = 'round'; // 8条腿
+    for (const dir of [-1, 1]) {
+      for (let k = 0; k < 4; k++) {
+        const ly = y - (12 - k * 5) * s + (k % 2 ? leg : -leg);
+        ctx.beginPath();
+        ctx.moveTo(x + dir * 8 * s, ly);
+        ctx.lineTo(x + dir * 24 * s, ly - 8 * s);
+        ctx.lineTo(x + dir * 30 * s, ly + 8 * s);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = body; // 蛛体
+    ctx.beginPath(); ctx.ellipse(x, y - 18 * s, 15 * s, 13 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = head; // 背部纹
+    ctx.beginPath(); ctx.ellipse(x, y - 24 * s, 7 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
+    for (const [ex, ey, er] of [[-7, -16, 2.6], [-2.5, -18, 2], [2.5, -18, 2], [7, -16, 2.6]]) { // 多眼排
+      ctx.fillStyle = '#ffe98a';
+      ctx.beginPath(); ctx.arc(x + ex * s, y + ey * s, er * s, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a0210';
+      ctx.beginPath(); ctx.arc(x + ex * s, y + ey * s, er * 0.5 * s, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#fff'; // 毒牙
+    ctx.beginPath(); ctx.moveTo(x - 4 * s, y - 9 * s); ctx.lineTo(x - 2 * s, y - 3 * s); ctx.lineTo(x, y - 9 * s); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 4 * s, y - 9 * s); ctx.lineTo(x + 2 * s, y - 3 * s); ctx.lineTo(x, y - 9 * s); ctx.closePath(); ctx.fill();
+  } else if (e.type === 'mb_bone') {
+    // 骸骨君王：骨躯 + 王冠 + 骨杖 + 眼窝绿火
+    const br = 15 * s;
+    ctx.fillStyle = OUT;
+    ctx.beginPath(); ctx.ellipse(x, y - 2, br * 1.3, br * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = body; // 肋骨躯干
+    ctx.beginPath(); ctx.ellipse(x, y - 15 * s, br, br * 1.15, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(90,80,60,0.6)'; ctx.lineWidth = 1.6 * s; // 肋纹
+    for (let k = -1; k <= 1; k++) {
+      ctx.beginPath(); ctx.arc(x, y - (15 + k * 6) * s, 10 * s, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    }
+    ctx.fillStyle = body; // 骷髅头
+    ctx.beginPath(); ctx.arc(x, y - 33 * s, 11 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8a7f68'; // 王冠
+    ctx.beginPath(); ctx.moveTo(x - 9 * s, y - 43 * s); ctx.lineTo(x - 6 * s, y - 49 * s); ctx.lineTo(x - 3 * s, y - 43 * s); ctx.lineTo(x, y - 50 * s); ctx.lineTo(x + 3 * s, y - 43 * s); ctx.lineTo(x + 6 * s, y - 49 * s); ctx.lineTo(x + 9 * s, y - 43 * s); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#7dff8a'; // 眼窝绿火
+    ctx.beginPath(); ctx.arc(x - 4.5 * s, y - 33 * s, 2.8 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 4.5 * s, y - 33 * s, 2.8 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#5c5240'; // 下颚
+    roundRect(x - 6 * s, y - 26 * s, 12 * s, 5 * s, 2 * s); ctx.fill();
+    ctx.fillStyle = '#6b5f45'; // 骨杖
+    ctx.fillRect(x - 21 * s, y - 46 * s, 3.5 * s, 36 * s);
+    ctx.fillStyle = '#7dff8a'; // 杖头绿火
+    ctx.beginPath(); ctx.arc(x - 19.5 * s, y - 49 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(125,255,138,0.35)';
+    ctx.beginPath(); ctx.arc(x - 19.5 * s, y - 49 * s, 8 * s, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 // 小生物通用表情：大眼+眼神高光+腮红（史莱姆/金虫共用）
@@ -1095,13 +1196,18 @@ const ENEMY_TYPES = {
   ranged: { hp: 13, speed: 46, dmg: 10, r: 14, xp: 2, body: '#2fa8a0', head: '#7fe6dd', scale: 1.0 },
   elite:  { hp: 70, speed: 72, dmg: 18, r: 25, xp: 8, body: '#c2304e', head: '#ff7d92', scale: 1.7, horns: true },
   gold:   { hp: 30, speed: 128, dmg: 4, r: 13, xp: 5, body: '#e8b93c', head: '#ffe98a', scale: 1.0 },
-  boss:   { hp: 3500, speed: 42, dmg: 30, r: 48, xp: 60, body: '#7a1030', head: '#e8506a', scale: 3.0, horns: true },
+  boss:   { hp: 6500, speed: 42, dmg: 30, r: 48, xp: 120, body: '#7a1030', head: '#e8506a', scale: 3.0, horns: true }, // 血量上调，多技能Boss
   // ——— 时间解锁新怪（后期阵容换血，越来越强） ———
   knight:  { hp: 320, speed: 50, dmg: 24, r: 19, xp: 7,  body: '#3c4468', head: '#c9d2e8', scale: 1.35 }, // 骷髅骑士：重甲肉盾（3:00起）
   wraith:  { hp: 130, speed: 132, dmg: 16, r: 13, xp: 4,  body: '#432a66', head: '#a06fe0', scale: 1.05 }, // 幽魂：高速刺客（5:00起）
   brute:   { hp: 850, speed: 42, dmg: 34, r: 25, xp: 14, body: '#4d5c34', head: '#8fae4e', scale: 1.8 },  // 腐肉巨兽：超级肉盾（8:00起）
   banshee: { hp: 220, speed: 88, dmg: 20, r: 15, xp: 6,  body: '#2c4a5e', head: '#7fd4e8', scale: 1.15 }, // 女妖：3发散射（10:00起）
   drake:   { hp: 1100, speed: 100, dmg: 38, r: 22, xp: 20, body: '#5c2430', head: '#e8506a', scale: 1.6 }, // 骨龙幼崽：全面强化（12:00起）
+  // ——— 阶段小Boss（3/6/9/12分钟登场，独立设计，没打死不消失） ———
+  mb_bandit: { hp: 900,  speed: 95, dmg: 22, r: 26, xp: 25, body: '#8c2f2f', head: '#e8b06a', scale: 1.9, miniBoss: true, horns: true }, // 狂暴酋长：冲锋+飞斧
+  mb_eye:    { hp: 1500, speed: 55, dmg: 26, r: 28, xp: 35, body: '#3d2a66', head: '#c9a0ff', scale: 2.0, miniBoss: true },             // 深渊魔眼：环形+贯穿
+  mb_spider: { hp: 2200, speed: 80, dmg: 30, r: 30, xp: 50, body: '#4a2c5c', head: '#b070ff', scale: 2.1, miniBoss: true },             // 蛛后：召唤+毒爆
+  mb_bone:   { hp: 3200, speed: 60, dmg: 34, r: 32, xp: 70, body: '#c9c2b0', head: '#8a7f68', scale: 2.2, miniBoss: true },             // 骸骨君王：召唤+骨环
 };
 
 // 经验价值随时间通胀：与怪血成长同节奏（每90秒+1倍），怪变强经验同步涨，后期升级不掉队
@@ -1134,7 +1240,7 @@ function spawnEnemy(type, x, y) {
   enemies.push({
     type, x, y, r: d.r * (type === 'boss' ? 1 : 1), hp: d.hp * hm * (type === 'boss' ? 1 : 1),
     maxHp: d.hp * hm, speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08),
-    dmg: d.dmg * dmgMult(), xp: d.xp, scale: d.scale, body: d.body, head: d.head, horns: d.horns,
+    dmg: d.dmg * dmgMult(), xp: d.xp, scale: d.scale, body: d.body, head: d.head, horns: d.horns, miniBoss: d.miniBoss,
     shootCd: rand(1, 2.5), hitT: { scythe: 0, poison: 0 }, slowT: 0, flash: 0,
     // Boss专用
     burstCd: 3, dead: false,
@@ -1186,10 +1292,18 @@ function updateSpawner(dt) {
     vibrate([80, 70, 80]);
     addDmgText(player.x, player.y - 60, '最终BOSS 降临！', '#ff5566', 26);
   }
-  // 16分钟仍未击杀Boss也算存活通关
-  if (!game.endless && game.bossSpawned && t >= CONFIG.surviveTime && game.boss && game.boss.hp > 0) {
-    victory();
+  // 阶段小Boss：3/6/9/12分钟各登场一只（独立设计，没打死不消失）
+  const MB_STAGES = [['mb_bandit', '狂暴酋长'], ['mb_eye', '深渊魔眼'], ['mb_spider', '蛛后'], ['mb_bone', '骸骨君王']];
+  while (game.mbStage < 4 && t >= 180 * (game.mbStage + 1)) {
+    const [mbId, mbName] = MB_STAGES[game.mbStage];
+    game.mbStage++;
+    spawnEnemy(mbId);
+    game.flashT = 1; shake(14, 0.7);
+    AudioSys.play('boss'); vibrate([70, 60, 70]);
+    game.bannerText = '⚠ 阶段BOSS · ' + mbName + ' ⚠'; game.bannerT = 2.4;
+    LOG.info('阶段Boss登场：' + mbName);
   }
+  // 注：Boss/阶段Boss 必须击杀才通关，未击杀永不消失（原16分钟存活通关已移除）
 }
 
 // ============================== 武器系统 ==============================
@@ -1296,7 +1410,7 @@ function updateWeapons(dt) {
         const th = 0.05 + lv * 0.006 + (w.evolved ? 0.03 : 0); // 斩杀线：5%血+0.6%/级
         let did = false;
         for (const e of enemies) {
-          if (e.dead || e.type === 'boss') continue;
+          if (e.dead || e.type === 'boss' || e.miniBoss) continue;
           if (e.hp / e.maxHp < th && dist2(e, player) < (rad + e.r) ** 2) {
             addParticles(e.x, e.y - 10, '#b070ff', 12, 220);
             damageEnemy(e, e.hp + 1); // 处决（用剩余血量防吸血溢出）
@@ -1586,7 +1700,7 @@ function updateSummons(dt) {
       for (const e of enemies) if (!e.dead && dist2(e, b) < b.r * b.r) damageEnemy(e, b.dot);
     }
     for (const e of enemies) { // 引力牵引（Boss太重拉不动）
-      if (e.dead || e.type === 'boss') continue;
+      if (e.dead || e.type === 'boss' || e.miniBoss) continue;
       const dx = b.x - e.x, dy = b.y - e.y, d = Math.hypot(dx, dy) || 1;
       if (d < b.r * 1.15) { e.x += dx / d * b.pull * dt; e.y += dy / d * b.pull * dt; }
     }
@@ -1745,6 +1859,12 @@ function killEnemy(e) {
   } else if (e.type === 'elite') {
     drops.push({ type: r < 0.5 ? 'chest' : 'magnet', x: e.x, y: e.y, t: 0 });
     for (let i = 0; i < 3; i++) drops.push({ type: 'coin', x: e.x + rand(-22, 22), y: e.y + rand(-22, 22), t: 0 }); // 精英必掉3金
+  } else if (e.miniBoss) {
+    // 阶段Boss：宝箱 + 金币雨12 + 击杀演出
+    shake(12, 0.6); game.flashT = 0.4;
+    drops.push({ type: 'chest', x: e.x, y: e.y, t: 0 });
+    for (let i = 0; i < 12; i++) drops.push({ type: 'coin', x: e.x + rand(-35, 35), y: e.y + rand(-35, 35), t: 0 });
+    addDmgText(e.x, e.y - 50, '击败阶段BOSS！', '#ffd77a', 22);
   }
   else if (r < 0.012) drops.push({ type: 'chicken', x: e.x, y: e.y, t: 0 });
   else if (r < 0.02) drops.push({ type: 'bomb', x: e.x, y: e.y, t: 0 });
@@ -1996,16 +2116,59 @@ function updateEnemies(dt) {
     } else {
       // 走地怪/精英/Boss：追击
       e.x += dx / d * e.speed * dt * slow; e.y += dy / d * e.speed * dt * slow;
-      if (e.type === 'boss') { // Boss环形弹幕
+      if (e.type === 'boss') { // 最终Boss：四招轮换 + 半血狂暴
+        e.burstCd -= dt;
+        const enraged = e.hp / e.maxHp < 0.5;
+        if (enraged && !e.enraged) { // 半血狂暴一次性演出
+          e.enraged = true;
+          addDmgText(e.x, e.y - 70, '狂 暴 ！', '#ff5566', 24);
+          game.flashT = 0.6;
+        }
+        if (e.burstCd <= 0) {
+          e.atkN = ((e.atkN || 0) + 1) % 4; // 四招轮换
+          e.burstCd = enraged ? 2.3 : 3.2;
+          const base = Math.atan2(player.y - e.y, player.x - e.x);
+          if (e.atkN === 0) {
+            const n = enraged ? 16 : 14; // 环形弹幕（狂暴加量）
+            for (let i = 0; i < n; i++) {
+              const a = i * Math.PI * 2 / n;
+              eBullets.push({ x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
+            }
+          } else if (e.atkN === 1) {
+            for (let k = -2; k <= 2; k++) { // 扇形5连狙杀弹
+              const a = base + k * 0.22;
+              eBullets.push({ x: e.x, y: e.y - 30, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, dmg: e.dmg * 0.85, r: 8, life: 3.2 });
+            }
+          } else if (e.atkN === 2) {
+            for (let k = 0; k < 3; k++) spawnEnemy(Math.random() < 0.5 ? 'fast' : 'normal', e.x + rand(-90, 90), e.y + rand(-90, 90)); // 召唤爪牙
+          } else {
+            e.chargeT = 1.1; // 冲锋：高速扑向玩家
+            addDmgText(e.x, e.y - 70, '冲 锋 ！', '#ff8866', 20);
+          }
+        }
+        if (e.chargeT > 0) { e.chargeT -= dt; e.x += dx / d * 340 * dt; e.y += dy / d * 340 * dt; }
+      }
+      if (e.miniBoss) { // 阶段小Boss：各自招牌技能（冲锋/弹幕/召唤）
         e.burstCd -= dt;
         if (e.burstCd <= 0) {
-          e.burstCd = 3.2;
-          for (let i = 0; i < 14; i++) {
-            const a = i * Math.PI * 2 / 14;
-            eBullets.push({ x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
+          e.burstCd = 3.6;
+          e.atkN = ((e.atkN || 0) + 1) % 2;
+          const base = Math.atan2(player.y - e.y, player.x - e.x);
+          if (e.type === 'mb_bandit') {
+            if (e.atkN === 1) { e.chargeT = 1.0; addDmgText(e.x, e.y - 60, '冲 锋 ！', '#ff8866', 18); }
+            else for (let k = -1; k <= 1; k++) { const a = base + k * 0.3; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 280, vy: Math.sin(a) * 280, dmg: e.dmg * 0.8, r: 8, life: 3 }); }
+          } else if (e.type === 'mb_eye') {
+            if (e.atkN === 1) { for (let i = 0; i < 10; i++) { const a = i * Math.PI * 2 / 10; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, dmg: e.dmg * 0.6, r: 8, life: 3.6 }); } }
+            else for (let k = 0; k < 3; k++) eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(base) * 320, vy: Math.sin(base) * 320, dmg: e.dmg * 0.9, r: 7, life: 3 });
+          } else if (e.type === 'mb_spider') {
+            if (e.atkN === 1) { for (let k = 0; k < 2; k++) spawnEnemy('fast', e.x + rand(-80, 80), e.y + rand(-80, 80)); }
+            else for (let k = -2; k <= 2; k++) { const a = base + k * 0.26; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, dmg: e.dmg * 0.7, r: 8, life: 3 }); }
+          } else if (e.type === 'mb_bone') {
+            if (e.atkN === 1) { for (let k = 0; k < 2; k++) spawnEnemy('normal', e.x + rand(-80, 80), e.y + rand(-80, 80)); }
+            else for (let i = 0; i < 12; i++) { const a = i * Math.PI * 2 / 12; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, dmg: e.dmg * 0.6, r: 8, life: 3.6 }); }
           }
-          // 已去屏幕震动（攻击特效一律不震）
         }
+        if (e.chargeT > 0) { e.chargeT -= dt; e.x += dx / d * 300 * dt; e.y += dy / d * 300 * dt; }
       }
     }
 
@@ -2054,7 +2217,7 @@ function startGame() {
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
   game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false;
-  game.nextBloodmoon = 180; game.bloodT = 0; game.bloodmoonCount = 0; joyReset();
+  game.nextBloodmoon = 180; game.bloodT = 0; game.bloodmoonCount = 0; game.mbStage = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
   minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
@@ -2151,7 +2314,7 @@ function saveRunToSlot(n) {
   const snap = {
     v: 1,
     date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount },
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage },
     player: {
       hp: player.hp,
       weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
@@ -2170,7 +2333,7 @@ function loadRunFromSlot(n) {
   game.level = s.game.level; game.xp = s.game.xp; game.xpNeed = s.game.xpNeed;
   game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
   game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || [];
-  game.nextBloodmoon = s.game.nextBloodmoon || 180; game.bloodmoonCount = s.game.bloodmoonCount || 0;
+  game.nextBloodmoon = s.game.nextBloodmoon || 180; game.bloodmoonCount = s.game.bloodmoonCount || 0; game.mbStage = s.game.mbStage || 0;
   player.weapons = {};
   for (const id in s.player.weapons) {
     giveWeapon(id);
@@ -2325,9 +2488,9 @@ function render() {
     } else {
       const e = d.e;
       // 特殊怪脚底光环（一眼识别威胁等级）
-      if (e.type === 'gold' || e.type === 'boss' || e.type === 'elite') {
+      if (e.type === 'gold' || e.type === 'boss' || e.type === 'elite' || e.miniBoss) {
         const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250 + e.x * 0.01);
-        const rc = e.type === 'gold' ? 'rgba(255,215,120,' : (e.type === 'boss' ? 'rgba(255,70,90,' : 'rgba(255,150,70,');
+        const rc = e.type === 'gold' ? 'rgba(255,215,120,' : (e.type === 'boss' ? 'rgba(255,70,90,' : (e.miniBoss ? 'rgba(220,120,255,' : 'rgba(255,150,70,'));
         ctx.strokeStyle = rc + (0.55 * pulse + 0.18) + ')'; // 光环加浓：暗色地面上要一眼看见
         ctx.lineWidth = e.type === 'boss' ? 5 : 3.2;
         ctx.beginPath(); ctx.ellipse(wx(e.x), wy(e.y), e.r * 1.35, e.r * 0.65, 0, 0, Math.PI * 2); ctx.stroke();
@@ -2337,8 +2500,8 @@ function render() {
       drawMonster(wx(e.x), wy(e.y), e.scale, e);
       ctx.globalAlpha = 1;
       // 精英/Boss 血条
-      if (e.type === 'elite' || e.type === 'boss') {
-        const bw = e.type === 'boss' ? 120 : 48, bx = wx(e.x) - bw / 2, by = wy(e.y) - e.r * 2.6 - 26;
+      if (e.type === 'elite' || e.type === 'boss' || e.miniBoss) {
+        const bw = e.type === 'boss' ? 120 : (e.miniBoss ? 84 : 48), bx = wx(e.x) - bw / 2, by = wy(e.y) - e.r * 2.6 - 26;
         ctx.fillStyle = 'rgba(0,0,0,0.55)'; roundRect(bx, by, bw, 7, 3); ctx.fill();
         ctx.fillStyle = e.type === 'boss' ? '#ff4d5e' : '#ff9d47';
         roundRect(bx, by, bw * clamp(e.hp / e.maxHp, 0, 1), 7, 3); ctx.fill();
@@ -2567,13 +2730,11 @@ function render() {
   // ---- 暗角氛围（世界层之上、UI之下）----
   ctx.drawImage(vignette, 0, 0, W, H);
 
-  // ---- 血月夜空（血月事件期间红光笼罩，脉冲呼吸）----
+  // ---- 血月夜空（血月事件期间红光笼罩，整屏均匀呼吸）----
   if (game.bloodT > 0) {
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 350);
-    ctx.fillStyle = `rgba(140,16,32,${0.10 + 0.08 * pulse})`;
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = `rgba(255,60,80,${0.05 + 0.05 * pulse})`; // 顶部血月光
-    ctx.fillRect(0, 0, W, H * 0.35);
+    ctx.fillStyle = `rgba(140,16,32,${0.13 + 0.07 * pulse})`;
+    ctx.fillRect(0, 0, W, H); // 单层全屏均匀覆盖，杜绝上红下无
   }
 
   // ---- 受击红闪 / Boss警告红屏 ----
