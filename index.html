@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.21</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.22</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -200,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.21');
+LOG.info('游戏脚本加载完成 v0.22');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -354,7 +354,8 @@ resize();
 // ============================== 数值配置 ==============================
 const CONFIG = {
   playerHp: 100, playerSpeed: 190, playerR: 15, iframe: 0.6,      // 玩家基础
-  weaponMax: 5, passiveMax: 5,                                     // 等级上限
+  weaponMax: 8, passiveMax: 8,                                     // 等级上限（放宽到8级，后期成长不断档）
+  evoLevel: 5,                                                     // 进化门槛固定5级（与上限解耦）
   bossTime: 900, surviveTime: 960,                                 // 15分钟Boss / 16分钟存活通关
   enemyCap: 230,                                                   // 同屏怪物上限
   xpNeed: lv => Math.floor(5 + lv * 3.6 + lv * lv * 0.72),         // 升级经验曲线（略加快节奏）
@@ -441,6 +442,7 @@ const game = {
   bannerT: 0, bannerText: '',          // 演出横幅（Boss出场等）
   healAcc: 0, healTextCd: 0,           // 治疗量累计/回血飘字限频
   revives: 0,                          // 本局已复活次数（续命费用递增用）
+  overflowN: 0,                        // 超限强化层数（无限成长兜底）
   rerolls: 3, banishes: 2,             // 升级三件套：重掷/拉黑剩余次数
   banList: [], banishMode: false,      // 本局拉黑名单 / 拉黑模式开关
   nextBloodmoon: 180, bloodT: 0, bloodmoonCount: 0, // 血月事件：下次触发时刻/夜空计时/波次
@@ -1173,9 +1175,10 @@ groundTileA.height = groundTileB.height = 64;
 // ============================== 玩家属性计算 ==============================
 function recomputeStats() {
   const p = player.passives, m = save.meta; // 局内被动 + 局外永久属性双层叠加
-  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0));
-  player.atkSpeedMult = 1 + 0.10 * (p.atkSpeed || 0);
-  player.areaMult = 1 + 0.12 * (p.area || 0);
+  const ov = game.overflowN || 0; // 超限强化层数：全满后无限成长（+4%伤/+2%速/+2%围）
+  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov);
+  player.atkSpeedMult = (1 + 0.10 * (p.atkSpeed || 0)) * (1 + 0.02 * ov);
+  player.areaMult = (1 + 0.12 * (p.area || 0)) * (1 + 0.02 * ov);
   player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0));
   player.projSpeedMult = 1 + 0.12 * (p.projSpeed || 0);
   player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0));
@@ -1187,7 +1190,7 @@ function recomputeStats() {
 
 // ============================== 敌人生成与难度曲线 ==============================
 // 血量双成长：线性 + 每3分钟阶梯抬升（压迫感）
-function hpMult() { return (1 + game.time / 85) * (1 + Math.floor(game.time / 180) * 0.55); } // 玩家数值加强后同步微调
+function hpMult() { return (1 + game.time / 160) * (1 + Math.floor(game.time / 180) * 0.25); } // 平衡放缓：15分钟约15倍（原32倍太肉）
 function dmgMult() { return 1 + Math.floor(game.time / 180) * 0.25; }
 
 const ENEMY_TYPES = {
@@ -1196,18 +1199,18 @@ const ENEMY_TYPES = {
   ranged: { hp: 13, speed: 46, dmg: 10, r: 14, xp: 2, body: '#2fa8a0', head: '#7fe6dd', scale: 1.0 },
   elite:  { hp: 70, speed: 72, dmg: 18, r: 25, xp: 8, body: '#c2304e', head: '#ff7d92', scale: 1.7, horns: true },
   gold:   { hp: 30, speed: 128, dmg: 4, r: 13, xp: 5, body: '#e8b93c', head: '#ffe98a', scale: 1.0 },
-  boss:   { hp: 6500, speed: 42, dmg: 30, r: 48, xp: 120, body: '#7a1030', head: '#e8506a', scale: 3.0, horns: true }, // 血量上调，多技能Boss
+  boss:   { hp: 5000, speed: 42, dmg: 30, r: 48, xp: 120, body: '#7a1030', head: '#e8506a', scale: 3.0, horns: true }, // 血量上调，多技能Boss
   // ——— 时间解锁新怪（后期阵容换血，越来越强） ———
-  knight:  { hp: 320, speed: 50, dmg: 24, r: 19, xp: 7,  body: '#3c4468', head: '#c9d2e8', scale: 1.35 }, // 骷髅骑士：重甲肉盾（3:00起）
+  knight:  { hp: 250, speed: 50, dmg: 24, r: 19, xp: 7,  body: '#3c4468', head: '#c9d2e8', scale: 1.35 }, // 骷髅骑士：重甲肉盾（3:00起）
   wraith:  { hp: 130, speed: 132, dmg: 16, r: 13, xp: 4,  body: '#432a66', head: '#a06fe0', scale: 1.05 }, // 幽魂：高速刺客（5:00起）
-  brute:   { hp: 850, speed: 42, dmg: 34, r: 25, xp: 14, body: '#4d5c34', head: '#8fae4e', scale: 1.8 },  // 腐肉巨兽：超级肉盾（8:00起）
-  banshee: { hp: 220, speed: 88, dmg: 20, r: 15, xp: 6,  body: '#2c4a5e', head: '#7fd4e8', scale: 1.15 }, // 女妖：3发散射（10:00起）
-  drake:   { hp: 1100, speed: 100, dmg: 38, r: 22, xp: 20, body: '#5c2430', head: '#e8506a', scale: 1.6 }, // 骨龙幼崽：全面强化（12:00起）
+  brute:   { hp: 520, speed: 42, dmg: 34, r: 25, xp: 14, body: '#4d5c34', head: '#8fae4e', scale: 1.8 },  // 腐肉巨兽：超级肉盾（8:00起）
+  banshee: { hp: 175, speed: 88, dmg: 20, r: 15, xp: 6,  body: '#2c4a5e', head: '#7fd4e8', scale: 1.15 }, // 女妖：3发散射（10:00起）
+  drake:   { hp: 680, speed: 100, dmg: 38, r: 22, xp: 20, body: '#5c2430', head: '#e8506a', scale: 1.6 }, // 骨龙幼崽：全面强化（12:00起）
   // ——— 阶段小Boss（3/6/9/12分钟登场，独立设计，没打死不消失） ———
   mb_bandit: { hp: 900,  speed: 95, dmg: 22, r: 26, xp: 25, body: '#8c2f2f', head: '#e8b06a', scale: 1.9, miniBoss: true, horns: true }, // 狂暴酋长：冲锋+飞斧
-  mb_eye:    { hp: 1500, speed: 55, dmg: 26, r: 28, xp: 35, body: '#3d2a66', head: '#c9a0ff', scale: 2.0, miniBoss: true },             // 深渊魔眼：环形+贯穿
-  mb_spider: { hp: 2200, speed: 80, dmg: 30, r: 30, xp: 50, body: '#4a2c5c', head: '#b070ff', scale: 2.1, miniBoss: true },             // 蛛后：召唤+毒爆
-  mb_bone:   { hp: 3200, speed: 60, dmg: 34, r: 32, xp: 70, body: '#c9c2b0', head: '#8a7f68', scale: 2.2, miniBoss: true },             // 骸骨君王：召唤+骨环
+  mb_eye:    { hp: 1100, speed: 55, dmg: 26, r: 28, xp: 35, body: '#3d2a66', head: '#c9a0ff', scale: 2.0, miniBoss: true },             // 深渊魔眼：环形+贯穿
+  mb_spider: { hp: 1600, speed: 80, dmg: 30, r: 30, xp: 50, body: '#4a2c5c', head: '#b070ff', scale: 2.1, miniBoss: true },             // 蛛后：召唤+毒爆
+  mb_bone:   { hp: 2300, speed: 60, dmg: 34, r: 32, xp: 70, body: '#c9c2b0', head: '#8a7f68', scale: 2.2, miniBoss: true },             // 骸骨君王：召唤+骨环
 };
 
 // 经验价值随时间通胀：与怪血成长同节奏（每90秒+1倍），怪变强经验同步涨，后期升级不掉队
@@ -1902,7 +1905,7 @@ function generateOptions() {
   // 进化：武器满级 + 拥有配对被动
   for (const ev of EVOLUTIONS) {
     const w = player.weapons[ev.weapon];
-    if (w && w.level >= CONFIG.weaponMax && !w.evolved && player.passives[ev.passive]) {
+    if (w && w.level >= CONFIG.evoLevel && !w.evolved && player.passives[ev.passive]) {
       evos.push({ type: 'evolution', ev, tag: '超武进化' });
     }
   }
@@ -1926,6 +1929,8 @@ function generateOptions() {
   for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
   // 过滤本局拉黑的选项（拉黑=整条线不再出现：武器/被动/回血）
   const filtered = others.filter(o => !game.banList.includes(o.type === 'heal' ? 'heal' : o.id));
+  // 超限强化兜底：卡池抽干后无限叠加（+4%伤害/+2%攻速/+2%范围），升级永不停歇
+  while (filtered.length < 5) filtered.push({ type: 'overflow', tag: '超限 Lv' + ((game.overflowN || 0) + 1) });
   return evos.concat(filtered).slice(0, 5);
 }
 
@@ -1934,6 +1939,7 @@ function optionInfo(opt) {
   if (opt.type === 'newWeapon') return { icon: WEAPON_DEFS[opt.id].icon, name: WEAPON_DEFS[opt.id].name, desc: WEAPON_DEFS[opt.id].desc };
   if (opt.type === 'weaponUp') return { icon: WEAPON_DEFS[opt.id].icon, name: WEAPON_DEFS[opt.id].name + ' 强化', desc: '伤害/效果提升' };
   if (opt.type === 'newPassive' || opt.type === 'passiveUp') return { icon: PASSIVE_DEFS[opt.id].icon, name: PASSIVE_DEFS[opt.id].name, desc: PASSIVE_DEFS[opt.id].desc };
+  if (opt.type === 'overflow') return { icon: '🌟', name: '超限强化', desc: '伤害+4% 攻速/范围+2%' };
   return { icon: '🍗', name: '烤鸡腿', desc: '回复 35% 生命' };
 }
 
@@ -1951,6 +1957,12 @@ function applyOption(opt) {
   else if (opt.type === 'newPassive') { player.passives[opt.id] = 1; recomputeStats(); }
   else if (opt.type === 'passiveUp') { player.passives[opt.id] = (player.passives[opt.id] || 0) + 1; recomputeStats(); }
   else if (opt.type === 'heal') player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.35);
+  else if (opt.type === 'overflow') {
+    // 超限强化：全能力小步快跑，无限叠加
+    game.overflowN = (game.overflowN || 0) + 1;
+    recomputeStats();
+    addDmgText(player.x, player.y - 50, '超限强化！', '#7de6ff', 20);
+  }
 }
 
 function openLevelUp(skipFx) {
@@ -2216,7 +2228,7 @@ function startGame() {
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
-  game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false;
+  game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false; game.overflowN = 0;
   game.nextBloodmoon = 180; game.bloodT = 0; game.bloodmoonCount = 0; game.mbStage = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
@@ -2314,7 +2326,7 @@ function saveRunToSlot(n) {
   const snap = {
     v: 1,
     date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage },
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], overflowN: game.overflowN, nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage },
     player: {
       hp: player.hp,
       weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
@@ -2332,7 +2344,7 @@ function loadRunFromSlot(n) {
   game.time = s.game.time; game.kills = s.game.kills; game.damage = s.game.damage;
   game.level = s.game.level; game.xp = s.game.xp; game.xpNeed = s.game.xpNeed;
   game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
-  game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || [];
+  game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || []; game.overflowN = s.game.overflowN || 0;
   game.nextBloodmoon = s.game.nextBloodmoon || 180; game.bloodmoonCount = s.game.bloodmoonCount || 0; game.mbStage = s.game.mbStage || 0;
   player.weapons = {};
   for (const id in s.player.weapons) {
