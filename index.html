@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.14</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.14.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.14');
+LOG.info('游戏脚本加载完成 v0.14.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1442,6 +1442,10 @@ function killEnemy(e) {
   ghosts.push({ x: e.x, y: e.y, scale: e.scale, type: e.type, body: e.body, head: e.head, life: 0.35, maxLife: 0.35 }); // 死亡消散残影
   if (e.type === 'boss') {
     shake(20, 1); game.flashT = 0.8;
+    // Boss 必掉金币：直接入账（通关结算时地上金币捡不到，入账最稳）+ 金币爆花
+    game.coins += 40;
+    addParticles(e.x, e.y - 10, '#ffd77a', 30, 300);
+    addDmgText(e.x, e.y - 50, '金币 +40', '#ffd77a', 24);
     victory();
     return;
   }
@@ -1455,10 +1459,13 @@ function killEnemy(e) {
     addParticles(e.x, e.y - 10, '#ffd77a', 20, 240);
     addDmgText(e.x, e.y - 40, '金币雨！', '#ffd77a', 22);
     for (let i = 0; i < 8; i++) drops.push({ type: 'coin', x: e.x + rand(-25, 25), y: e.y + rand(-25, 25), t: 0 });
+  } else if (e.type === 'elite') {
+    drops.push({ type: r < 0.5 ? 'chest' : 'magnet', x: e.x, y: e.y, t: 0 });
+    for (let i = 0; i < 3; i++) drops.push({ type: 'coin', x: e.x + rand(-22, 22), y: e.y + rand(-22, 22), t: 0 }); // 精英必掉3金
   }
-  else if (e.type === 'elite') { drops.push({ type: r < 0.5 ? 'chest' : 'magnet', x: e.x, y: e.y, t: 0 }); }
   else if (r < 0.012) drops.push({ type: 'chicken', x: e.x, y: e.y, t: 0 });
   else if (r < 0.02) drops.push({ type: 'bomb', x: e.x, y: e.y, t: 0 });
+  else if (r < 0.10) drops.push({ type: 'coin', x: e.x, y: e.y, t: 0 }); // 小怪8%概率掉1金
 }
 
 function damagePlayer(dmg) {
