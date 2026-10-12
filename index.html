@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.23</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.24</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -200,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.23');
+LOG.info('游戏脚本加载完成 v0.24');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -443,6 +443,7 @@ const game = {
   healAcc: 0, healTextCd: 0,           // 治疗量累计/回血飘字限频
   revives: 0,                          // 本局已复活次数（续命费用递增用）
   overflowN: 0,                        // 超限强化层数（无限成长兜底）
+  dmgByWeapon: {}, curSrc: 'other',    // 伤害归因表（结算构建展示）
   rerolls: 3, banishes: 2,             // 升级三件套：重掷/拉黑剩余次数
   banList: [], banishMode: false,      // 本局拉黑名单 / 拉黑模式开关
   nextBloodmoon: 180, bloodT: 0, bloodmoonCount: 0, // 血月事件：下次触发时刻/夜空计时/波次
@@ -1334,6 +1335,7 @@ function weaponDmg(base, lv) { return (base * (1 + 0.32 * lv)) * player.dmgMult;
 function updateWeapons(dt) {
   for (const id in player.weapons) {
     const w = player.weapons[id], lv = w.level;
+    game.curSrc = id; // 伤害归因：本轮武器的伤害记到它头上
     w.t += dt; w.cd -= dt;
 
     // ---- 暗影箭：自动射向最近敌人（进化：暗影箭雨）----
@@ -1714,7 +1716,7 @@ function updateSummons(dt) {
     b.life -= dt; b.tick -= dt;
     if (b.tick <= 0) {
       b.tick = 0.5;
-      for (const e of enemies) if (!e.dead && dist2(e, b) < b.r * b.r) damageEnemy(e, b.dot);
+      for (const e of enemies) if (!e.dead && dist2(e, b) < b.r * b.r) damageEnemy(e, b.dot, 'blackhole');
     }
     for (const e of enemies) { // 引力牵引（Boss太重拉不动）
       if (e.dead || e.type === 'boss' || e.miniBoss) continue;
@@ -1724,7 +1726,7 @@ function updateSummons(dt) {
     if (b.life <= 0) {
       addParticles(b.x, b.y, '#a06fe0', 26, 300);
       addParticles(b.x, b.y, '#2a1a4a', 16, 200);
-      for (const e of enemies) if (!e.dead && dist2(e, b) < (b.r * 1.1) ** 2) damageEnemy(e, b.boom);
+      for (const e of enemies) if (!e.dead && dist2(e, b) < (b.r * 1.1) ** 2) damageEnemy(e, b.boom, 'blackhole');
       addDmgText(b.x, b.y - 30, '湮灭', '#c9a0ff', 17);
       AudioSys.play('aoe');
       blackholes.splice(i, 1);
@@ -1749,7 +1751,7 @@ function updateSummons(dt) {
       const er = e.r + m.r;
       if ((e.x - m.x) ** 2 + (e.y - m.y) ** 2 < er * er) {
         e.hitT.minion = 0.35;
-        damageEnemy(e, m.dmg);
+        damageEnemy(e, m.dmg, m.src || 'minion');
       }
     }
   }
@@ -1762,7 +1764,7 @@ function updateSummons(dt) {
     if (z.tickCd <= 0) {
       z.tickCd = 0.5;
       for (const e of enemies) {
-        if (!e.dead && dist2(e, z) < (z.r + e.r) ** 2) damageEnemy(e, z.dmg);
+        if (!e.dead && dist2(e, z) < (z.r + e.r) ** 2) damageEnemy(e, z.dmg, z.src || 'holyfire');
       }
     }
   }
@@ -1802,9 +1804,9 @@ function updateSummons(dt) {
     if (m.t >= m.dur) {
       meteors.splice(i, 1);
       for (const e of enemies) {
-        if (!e.dead && dist2(e, m) < (m.r + e.r) ** 2) damageEnemy(e, m.dmg);
+        if (!e.dead && dist2(e, m) < (m.r + e.r) ** 2) damageEnemy(e, m.dmg, 'meteor');
       }
-      fireZones.push({ x: m.x, y: m.y, r: m.r * 0.62, life: 2.5, tickCd: 0, dmg: m.dmg * 0.22 }); // 陨石坑灼烧
+      fireZones.push({ x: m.x, y: m.y, r: m.r * 0.62, life: 2.5, tickCd: 0, dmg: m.dmg * 0.22, src: 'meteor' }); // 陨石坑灼烧
       addParticles(m.x, m.y, '#ff9d47', 18, 260);
       addParticles(m.x, m.y, '#ffd77a', 8, 180);
       AudioSys.play('bomb');
@@ -1813,7 +1815,7 @@ function updateSummons(dt) {
 }
 
 // ============================== 伤害与击杀 ==============================
-function damageEnemy(e, dmg) {
+function damageEnemy(e, dmg, src) {
   if (e.dead) return;
   // 暴击：12% 概率 1.7 倍，金色大字跳脸
   const crit = Math.random() < 0.22; // 暴击率 22%（老大反馈12%太低）
@@ -1822,6 +1824,9 @@ function damageEnemy(e, dmg) {
   if (Math.random() < 0.5) addParticles(e.x, e.y - e.r, '#fff', 2, 90); // 命中火花（概率触发省性能）
   AudioSys.play('hit');
   game.damage += finalDmg;
+  // 伤害归因：结算构建展示"哪把武器伤害最高"用
+  const srcKey = src || game.curSrc || 'other';
+  game.dmgByWeapon[srcKey] = (game.dmgByWeapon[srcKey] || 0) + finalDmg;
   // 方案A 生命汲取：伤害的0.5%/级转生命（与DPS同步成长，天然平衡）
   const steal = finalDmg * 0.005 * (player.passives.lifesteal || 0);
   if (steal > 0) {
@@ -2119,7 +2124,7 @@ function updateDrops(dt) {
         AudioSys.play('bomb');
         addParticles(player.x, player.y, '#ffd77a', 40, 380);
         // 固定500伤害：前期清屏依旧爽，后期炸残不秒杀（防一发清屏破坏后期压迫感）
-        for (const e of enemies) if (!e.dead) damageEnemy(e, 500);
+        for (const e of enemies) if (!e.dead) damageEnemy(e, 500, 'bomb');
         addDmgText(player.x, player.y - 40, '轰！500伤害', '#ffd77a', 22);
       }
       else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); AudioSys.play('chest'); game.pendingLevels++; if (game.state === 'playing') openLevelUp(); }
@@ -2275,6 +2280,7 @@ function startGame() {
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
   game.rerolls = 3; game.banishes = 2; game.banList = []; game.banishMode = false; game.overflowN = 0;
+  game.dmgByWeapon = {}; game.curSrc = 'other';
   game.nextBloodmoon = 180; game.bloodT = 0; game.bloodmoonCount = 0; game.mbStage = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
@@ -2290,7 +2296,7 @@ function startGame() {
   LOG.info('开局：新一局开始');
 }
 
-function endRun(victoryFlag, endlessQuit) {
+function endRun(victoryFlag, endlessQuit, quitReason) {
   // 更新纪录
   save.records.time = Math.max(save.records.time, Math.floor(game.time));
   save.records.kills = Math.max(save.records.kills, game.kills);
@@ -2298,10 +2304,24 @@ function endRun(victoryFlag, endlessQuit) {
   writeSave();
   game.state = 'settle';
   document.getElementById('settleTitle').textContent =
+    quitReason === 'save' ? '💾 已保存 · 本局结算' :
+    quitReason === 'quit' ? '主动退出 · 本局结算' :
     endlessQuit ? '无尽结算' : (victoryFlag ? '通 关 ！' : '游 戏 结 束');
+  // —— 结算构建展示：武器/被动一览 + 伤害排行（哪把武器最能打一目了然）——
+  const ws = Object.entries(player.weapons).map(([id, w]) =>
+    `${WEAPON_DEFS[id] ? WEAPON_DEFS[id].icon : '⚔'}${WEAPON_DEFS[id] ? WEAPON_DEFS[id].name : id} Lv${w.level}${w.evolved ? '·超武' : ''}`);
+  const ps = Object.entries(player.passives).map(([id, lv]) =>
+    `${PASSIVE_DEFS[id] ? PASSIVE_DEFS[id].icon : '✨'}${PASSIVE_DEFS[id] ? PASSIVE_DEFS[id].name : id} Lv${lv}`);
+  const srcName = (id) => (WEAPON_DEFS[id] ? WEAPON_DEFS[id].name : { shot: '幽灵箭', minion: '召唤物', bomb: '炸弹', meteor: '陨石坑', blackhole: '黑洞', holyfire: '圣火', other: '其他' }[id] || id);
+  const rows = Object.entries(game.dmgByWeapon || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const totDmg = rows.reduce((s, r) => s + r[1], 0) || 1;
+  const topHtml = rows.map(([id, v], i) =>
+    `<div style="margin:2px 0">${i + 1}. <b>${srcName(id)}</b> ${Math.floor(v).toLocaleString()}（${Math.round(v / totDmg * 100)}%）</div>`).join('');
   document.getElementById('settleStats').innerHTML =
     `存活 <b>${fmtTime(game.time)}</b>　击杀 <b>${game.kills}</b>　总伤害 <b>${Math.floor(game.damage).toLocaleString()}</b><br>` +
-    `等级 <b>${game.level}</b>　金币 <b>${game.coins}</b>`;
+    `等级 <b>${game.level}</b>　金币 <b>${game.coins}</b>` +
+    `<div style="margin-top:10px;opacity:0.92">—— 本次构建 ——<br><span style="font-size:0.82em">${ws.join('　') || '无'}</span><br><span style="font-size:0.82em;opacity:0.85">${ps.join('　') || '无'}</span></div>` +
+    `<div style="margin-top:10px;opacity:0.92">—— 伤害统计 TOP${rows.length} ——<br><span style="font-size:0.85em">${topHtml || '无'}</span></div>`;
   // 无尽继续按钮：仅通关时提供
   document.getElementById('endlessBtn').style.display = (victoryFlag && !endlessQuit) ? '' : 'none';
   document.getElementById('settle').classList.remove('hidden');
@@ -2372,7 +2392,7 @@ function saveRunToSlot(n) {
   const snap = {
     v: 1,
     date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], overflowN: game.overflowN, nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage },
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], overflowN: game.overflowN, dmgByWeapon: game.dmgByWeapon, nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage },
     player: {
       hp: player.hp,
       weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
@@ -2390,7 +2410,7 @@ function loadRunFromSlot(n) {
   game.time = s.game.time; game.kills = s.game.kills; game.damage = s.game.damage;
   game.level = s.game.level; game.xp = s.game.xp; game.xpNeed = s.game.xpNeed;
   game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
-  game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || []; game.overflowN = s.game.overflowN || 0;
+  game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || []; game.overflowN = s.game.overflowN || 0; game.dmgByWeapon = s.game.dmgByWeapon || {};
   game.nextBloodmoon = s.game.nextBloodmoon || 180; game.bloodmoonCount = s.game.bloodmoonCount || 0; game.mbStage = s.game.mbStage || 0;
   player.weapons = {};
   for (const id in s.player.weapons) {
@@ -2430,8 +2450,8 @@ function openSlotPanel(mode) {
         saveRunToSlot(n);
         document.getElementById('slotPanel').classList.add('hidden');
         document.getElementById('pausePanel').classList.add('hidden');
-        LOG.info('保存并退出本局');
-        showMenu();
+        LOG.info('保存并退出本局，进入结算');
+        endRun(false, false, 'save'); // 保存退出也给结算展示
       } else if (s) {
         loadRunFromSlot(n);
         document.getElementById('slotPanel').classList.add('hidden');
@@ -2942,7 +2962,7 @@ function loop(now) {
         const er = e.r + b.r;
         if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < er * er) {
           b.hitSet.add(e);
-          damageEnemy(e, b.dmg); hit = true;
+          damageEnemy(e, b.dmg, b.src || b.type); hit = true; // 弹体归因到武器/弹种
           if (b.pierce > 0) b.pierce--; else break;
         }
       }
@@ -3020,10 +3040,10 @@ document.getElementById('endlessBtn').addEventListener('click', () => {
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
 document.getElementById('resumeBtn').addEventListener('click', togglePause);
 document.getElementById('quitBtn').addEventListener('click', () => {
-  // 回主菜单：放弃本局（不计入纪录）
+  // 主动退出：走结算展示（老大要求：退出也要有结算），再回主菜单
   document.getElementById('pausePanel').classList.add('hidden');
-  LOG.info('中途退出本局');
-  showMenu();
+  LOG.info('主动退出本局，进入结算');
+  endRun(false, false, 'quit');
 });
 // 保存并退出：弹槽位面板（仅存活时可存，死亡无法保存）
 document.getElementById('saveQuitBtn').addEventListener('click', () => {
