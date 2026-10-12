@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.25.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.25.2</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
@@ -200,7 +200,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.25.1');
+LOG.info('游戏脚本加载完成 v0.25.2');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -2562,9 +2562,9 @@ function render() {
     const w = player.weapons[id];
     if (id === 'poison' && w.poisonR) {
       const r = w.poisonR;
-      ctx.fillStyle = w.evolved ? 'rgba(120,255,90,0.20)' : 'rgba(120,220,90,0.13)';
+      ctx.fillStyle = w.evolved ? 'rgba(120,255,90,0.13)' : 'rgba(120,220,90,0.08)'; // 降透明：范围特效不抢戏
       ctx.beginPath(); ctx.ellipse(wx(player.x), wy(player.y), r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(150,255,120,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = 'rgba(150,255,120,0.22)'; ctx.lineWidth = 2; ctx.stroke();
     }
   }
 
@@ -2572,8 +2572,42 @@ function render() {
   for (const z of fireZones) {
     const x = wx(z.x), y = wy(z.y);
     const flicker = 0.85 + Math.sin(z.life * 8) * 0.15; // 火焰闪烁
+    ctx.globalAlpha = 0.7; // 降透明：范围特效在实体下方不抢戏
     ctx.drawImage(GLOWS.fire, x - z.r * flicker, y - z.r * 0.7 * flicker, z.r * 2 * flicker, z.r * 1.4 * flicker); // 预渲染发光贴图
-    ctx.strokeStyle = 'rgba(255,200,110,0.65)'; ctx.lineWidth = 3; ctx.stroke(); // 火圈边线加浓
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,200,110,0.42)'; ctx.lineWidth = 3; ctx.stroke(); // 火圈边线加浓
+  }
+
+  // ---- 重力黑洞漩涡（范围特效：实体下方+降透明，不挡人物怪物）----
+  for (const b of blackholes) {
+    const x = wx(b.x), y = wy(b.y);
+    const t2 = performance.now() / 300;
+    ctx.globalAlpha = 0.62;
+    ctx.drawImage(GLOWS.hole, x - b.r * 0.72, y - b.r * 0.72, b.r * 1.44, b.r * 1.44); // 预渲染发光贴图
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(20,4,40,0.55)';
+    ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(190,130,255,0.35)'; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) {
+      ctx.beginPath();
+      ctx.arc(x, y, 20 + k * 14, t2 + k * 2, t2 + k * 2 + 2.2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(10,2,20,0.8)'; // 黑洞核心
+    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ---- 神圣闪电链（范围特效：实体下方+降透明）----
+  for (const z of zaps) {
+    const x1 = wx(z.x1), y1 = wy(z.y1), x2 = wx(z.x2), y2 = wy(z.y2);
+    const alpha = clamp(z.life * 5, 0, 1) * 0.55;
+    ctx.strokeStyle = `rgba(180,220,255,${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo((x1 + x2) / 2 + rand(-14, 14), (y1 + y2) / 2 + rand(-14, 14)); // 中段抖动
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
   }
 
   // ---- 掉落物 & 宝石（外发光+呼吸闪烁+高光点）----
@@ -2747,20 +2781,7 @@ function render() {
     ctx.strokeStyle = '#c9a24a'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x + 8, y - 10, 6, -1.2, 1.2); ctx.stroke();
   }
-  // 神圣闪电链特效（折线抖动模拟闪电）
-  for (const z of zaps) {
-    const x1 = wx(z.x1), y1 = wy(z.y1), x2 = wx(z.x2), y2 = wy(z.y2);
-    const alpha = clamp(z.life * 5, 0, 1);
-    ctx.strokeStyle = `rgba(180,220,255,${alpha})`;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo((x1 + x2) / 2 + rand(-14, 14), (y1 + y2) / 2 + rand(-14, 14)); // 中段抖动
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-    ctx.stroke();
-  }
+
   // 环绕血镰
   for (const id in player.weapons) {
     const w = player.weapons[id];
@@ -2809,22 +2830,7 @@ function render() {
       ctx.restore();
     }
   }
-  // 重力黑洞（旋臂暗紫漩涡）
-  for (const b of blackholes) {
-    const x = wx(b.x), y = wy(b.y);
-    const t2 = performance.now() / 300;
-    ctx.drawImage(GLOWS.hole, x - b.r * 0.72, y - b.r * 0.72, b.r * 1.44, b.r * 1.44); // 预渲染发光贴图
-    ctx.fillStyle = 'rgba(20,4,40,0.85)';
-    ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(190,130,255,0.5)'; ctx.lineWidth = 2;
-    for (let k = 0; k < 3; k++) {
-      ctx.beginPath();
-      ctx.arc(x, y, 20 + k * 14, t2 + k * 2, t2 + k * 2 + 2.2);
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#0a0214'; // 黑洞核心
-    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill();
-  }
+
   // 敌方弹幕
   for (const b of eBullets) {
     const x = wx(b.x), y = wy(b.y);
