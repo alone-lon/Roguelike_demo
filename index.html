@@ -86,7 +86,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.16.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.16.2</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
@@ -170,7 +170,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.16.1');
+LOG.info('游戏脚本加载完成 v0.16.2');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1728,8 +1728,9 @@ function updateDrops(dt) {
         game.flashT = 0.5;
         AudioSys.play('bomb');
         addParticles(player.x, player.y, '#ffd77a', 40, 380);
-        for (const e of enemies) if (!e.dead && e.type !== 'boss') damageEnemy(e, 9999);
-        addDmgText(player.x, player.y - 40, '清屏炸弹！', '#ffd77a', 22);
+        // 固定500伤害：前期清屏依旧爽，后期炸残不秒杀（防一发清屏破坏后期压迫感）
+        for (const e of enemies) if (!e.dead) damageEnemy(e, 500);
+        addDmgText(player.x, player.y - 40, '轰！500伤害', '#ffd77a', 22);
       }
       else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); AudioSys.play('chest'); game.pendingLevels++; if (game.state === 'playing') openLevelUp(); }
       else if (d.type === 'coin') { game.coins += 1; game.coinPulse = 1; addParticles(d.x, d.y, '#ffd77a', 4, 120); AudioSys.play('coin'); } // 金币拾取闪光+音
