@@ -102,7 +102,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.35.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.36</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -250,7 +250,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.35.1');
+LOG.info('游戏脚本加载完成 v0.36');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -2357,7 +2357,18 @@ function killEnemy(e) {
   }
 }
 
-function damagePlayer(dmg, attacker) {
+// 死亡报告：怪物显示名（结算展示"击杀你的怪物"）
+function enemyDisplayName(e) {
+  if (!e) return '未知魔物';
+  if (e.type === 'boss') return '最终BOSS · 大恶魔兽';
+  return {
+    mb_bandit: '狂暴酋长', mb_eye: '深渊魔眼', mb_spider: '蛛后', mb_bone: '骸骨君王',
+    knight: '骷髅骑士', wraith: '幽魂', brute: '腐肉巨兽', banshee: '女妖', drake: '骨龙幼崽',
+    normal: '疫病行尸', fast: '迅捷食尸鬼', ranged: '瘟疫妖术士', elite: '嗜血魔将', gold: '黄金哥布林',
+  }[e.type] || '魔物';
+}
+
+function damagePlayer(dmg, attacker, atkName) {
   if (player.iframe > 0 || game.state !== 'playing') return;
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
@@ -2374,7 +2385,15 @@ function damagePlayer(dmg, attacker) {
   shake(9, 0.3);
   addDmgText(player.x, player.y - 40, '-' + Math.round(dmg), '#ff6b6b', 20);
   game.flashT = Math.max(game.flashT, 0.25);
-  if (player.hp <= 0) { player.hp = 0; gameOver(); }
+  if (player.hp <= 0) {
+    player.hp = 0;
+    // 死亡报告：记录击杀者与招式（老大需求：死得明明白白）
+    game.killer = attacker
+      ? { name: enemyDisplayName(attacker), atk: atkName || attacker.lastAtk || '近身撕咬' }
+      : { name: '未知魔物', atk: '' };
+    LOG.info('死亡：被 ' + game.killer.name + (game.killer.atk ? '（' + game.killer.atk + '）' : '') + ' 击杀');
+    gameOver();
+  }
 }
 
 // ============================== 经验与升级 ==============================
@@ -2629,10 +2648,12 @@ function updateEnemies(dt) {
           const base = Math.atan2(player.y - e.y, player.x - e.x);
           for (let k = -1; k <= 1; k++) {
             const a = base + k * 0.28;
-            eBullets.push({ x: e.x, y: e.y - 12, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, dmg: e.dmg, r: 8, life: 3.4 });
+            e.lastAtk = '亡者之矢';
+            eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 12, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, dmg: e.dmg, r: 8, life: 3.4 });
           }
         } else {
-          eBullets.push({ x: e.x, y: e.y - 12, vx: dx / d * 230, vy: dy / d * 230, dmg: e.dmg, r: 7, life: 3.2 });
+          e.lastAtk = '暗影弹';
+          eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 12, vx: dx / d * 230, vy: dy / d * 230, dmg: e.dmg, r: 7, life: 3.2 });
         }
       }
     } else {
@@ -2654,12 +2675,12 @@ function updateEnemies(dt) {
             const n = enraged ? 16 : 14; // 环形弹幕（狂暴加量）
             for (let i = 0; i < n; i++) {
               const a = i * Math.PI * 2 / n;
-              eBullets.push({ x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
+              eBullets.push({ owner: e, atk: e.lastAtk || '魔能弹幕', x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
             }
           } else if (e.atkN === 1) {
             for (let k = -2; k <= 2; k++) { // 扇形5连狙杀弹
               const a = base + k * 0.22;
-              eBullets.push({ x: e.x, y: e.y - 30, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, dmg: e.dmg * 0.85, r: 8, life: 3.2 });
+              eBullets.push({ owner: e, atk: e.lastAtk || '魔能弹幕', x: e.x, y: e.y - 30, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, dmg: e.dmg * 0.85, r: 8, life: 3.2 });
             }
           } else if (e.atkN === 2) {
             for (let k = 0; k < 3; k++) spawnEnemy(Math.random() < 0.5 ? 'fast' : 'normal', e.x + rand(-90, 90), e.y + rand(-90, 90)); // 召唤爪牙
@@ -2677,17 +2698,17 @@ function updateEnemies(dt) {
           e.atkN = ((e.atkN || 0) + 1) % 2;
           const base = Math.atan2(player.y - e.y, player.x - e.x);
           if (e.type === 'mb_bandit') {
-            if (e.atkN === 1) { e.chargeT = 1.0; addDmgText(e.x, e.y - 60, '冲 锋 ！', '#ff8866', 18); }
-            else for (let k = -1; k <= 1; k++) { const a = base + k * 0.3; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 280, vy: Math.sin(a) * 280, dmg: e.dmg * 0.8, r: 8, life: 3 }); }
+            if (e.atkN === 1) { e.chargeT = 1.0; e.lastAtk = '狂暴冲锋'; addDmgText(e.x, e.y - 60, '冲 锋 ！', '#ff8866', 18); }
+            else { e.lastAtk = '回旋飞斧'; for (let k = -1; k <= 1; k++) { const a = base + k * 0.3; eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 20, vx: Math.cos(a) * 280, vy: Math.sin(a) * 280, dmg: e.dmg * 0.8, r: 8, life: 3 }); } }
           } else if (e.type === 'mb_eye') {
-            if (e.atkN === 1) { for (let i = 0; i < 10; i++) { const a = i * Math.PI * 2 / 10; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, dmg: e.dmg * 0.6, r: 8, life: 3.6 }); } }
-            else for (let k = 0; k < 3; k++) eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(base) * 320, vy: Math.sin(base) * 320, dmg: e.dmg * 0.9, r: 7, life: 3 });
+            if (e.atkN === 1) { e.lastAtk = '骨环弹幕'; for (let i = 0; i < 10; i++) { const a = i * Math.PI * 2 / 10; eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 20, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, dmg: e.dmg * 0.6, r: 8, life: 3.6 }); } }
+            else { e.lastAtk = '贯穿骨矛'; for (let k = 0; k < 3; k++) eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 20, vx: Math.cos(base) * 320, vy: Math.sin(base) * 320, dmg: e.dmg * 0.9, r: 7, life: 3 }); }
           } else if (e.type === 'mb_spider') {
             if (e.atkN === 1) { for (let k = 0; k < 2; k++) spawnEnemy('fast', e.x + rand(-80, 80), e.y + rand(-80, 80)); }
-            else for (let k = -2; k <= 2; k++) { const a = base + k * 0.26; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, dmg: e.dmg * 0.7, r: 8, life: 3 }); }
+            else { e.lastAtk = '冰锥散射'; for (let k = -2; k <= 2; k++) { const a = base + k * 0.26; eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 20, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, dmg: e.dmg * 0.7, r: 8, life: 3 }); } }
           } else if (e.type === 'mb_bone') {
             if (e.atkN === 1) { for (let k = 0; k < 2; k++) spawnEnemy('normal', e.x + rand(-80, 80), e.y + rand(-80, 80)); }
-            else for (let i = 0; i < 12; i++) { const a = i * Math.PI * 2 / 12; eBullets.push({ x: e.x, y: e.y - 20, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, dmg: e.dmg * 0.6, r: 8, life: 3.6 }); }
+            else { e.lastAtk = '深渊之环'; for (let i = 0; i < 12; i++) { const a = i * Math.PI * 2 / 12; eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 20, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, dmg: e.dmg * 0.6, r: 8, life: 3.6 }); } }
           }
         }
         if (e.chargeT > 0) { e.chargeT -= dt; e.x += dx / d * 300 * dt; e.y += dy / d * 300 * dt; }
@@ -2706,7 +2727,7 @@ function updateEnemies(dt) {
     // 接触伤害（玩家有无敌帧）
     const er = e.r + player.r;
     if (d < er) {
-      damagePlayer(e.dmg, e); // 带攻击者引用：荆棘反伤用
+      damagePlayer(e.dmg, e, e.chargeT > 0 ? (e.lastAtk || '狂暴冲锋') : '近身撕咬'); // 带攻击者引用：荆棘反伤/死亡报告用
       // 轻推挤开，防止怪贴脸糊死
       e.x -= dx / d * 12; e.y -= dy / d * 12;
     }
@@ -2741,7 +2762,7 @@ function updatePlayer(dt) {
 // ============================== 游戏流程 ==============================
 function startGame() {
   // 重置全部状态
-  game.state = 'playing'; game.time = 0; game.kills = 0; game.damage = 0;
+  game.state = 'playing'; game.time = 0; game.kills = 0; game.damage = 0; game.killer = null;
   document.getElementById('installBtn').classList.add('hidden'); // PWA 安装按钮战时隐藏
   game.level = 1; game.xp = 0; game.xpNeed = CONFIG.xpNeed(1);
   game.endless = false; game.bossSpawned = false; game.boss = null;
@@ -2804,9 +2825,11 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
   const totDmg = rows.reduce((s, r) => s + r[1], 0) || 1;
   const topHtml = rows.map(([id, v], i) =>
     `<div style="margin:2px 0">${i + 1}. <b>${srcName(id)}</b> ${Math.floor(v).toLocaleString()}（${Math.round(v / totDmg * 100)}%）</div>`).join('');
+  const killerLine = (game.killer && !victoryFlag)
+    ? `<div style="margin-top:8px;color:#ff8896">💀 击杀你的怪物：<b>${game.killer.name}</b>${game.killer.atk ? '（' + game.killer.atk + '）' : ''}</div>` : '';
   document.getElementById('settleStats').innerHTML =
     `存活 <b>${fmtTime(game.time)}</b>　击杀 <b>${game.kills}</b>　总伤害 <b>${Math.floor(game.damage).toLocaleString()}</b><br>` +
-    `等级 <b>${game.level}</b>　金币 <b>${game.coins}</b>` +
+    `等级 <b>${game.level}</b>　金币 <b>${game.coins}</b>` + killerLine +
     `<div style="margin-top:10px;opacity:0.92">—— 本次构建 ——<br><span style="font-size:0.82em">${ws.join('　') || '无'}</span><br><span style="font-size:0.82em;opacity:0.85">${ps.join('　') || '无'}</span></div>` +
     `<div style="margin-top:10px;opacity:0.92">—— 伤害统计 TOP${rows.length} ——<br><span style="font-size:0.85em">${topHtml || '无'}</span></div>`;
   // 无尽继续按钮：仅通关时提供
@@ -3611,7 +3634,7 @@ function loop(now) {
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       const er = b.r + player.r;
       if ((player.x - b.x) ** 2 + (player.y - b.y) ** 2 < er * er) {
-        damagePlayer(b.dmg); eBullets.splice(i, 1); continue;
+        damagePlayer(b.dmg, b.owner, b.atk); eBullets.splice(i, 1); continue;
       }
       if (b.life <= 0) eBullets.splice(i, 1);
     }
