@@ -102,10 +102,11 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.30</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.31.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
+  <button class="btn sub" id="achBtn">🏆 成 就</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
@@ -172,10 +173,19 @@
   <button class="btn sub" id="charBack">返 回</button>
 </div>
 
+<!-- 成就面板 -->
+<div id="achPanel" class="overlay hidden">
+  <button id="achClose" title="关闭">✕</button>
+  <div class="title" style="font-size:clamp(22px,5vw,40px)">🏆 成 就</div>
+  <div class="subtitle" id="achProgress"></div>
+  <div class="cards" id="achCards"></div>
+  <button class="btn sub" id="achBack">返 回</button>
+</div>
+
 <!-- 升级商店（局外永久属性，下局生效） -->
 <div id="shop" class="overlay hidden">
   <button id="shopClose" title="关闭">✕</button>
-  <style>#charClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
+  <style>#charClose, #achClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
   <div class="title" style="font-size:clamp(22px,5vw,40px)">升 级 商 店</div>
   <div class="subtitle" id="shopCoins">金币：0　（属性下局生效）</div>
   <div class="cards" id="shopItems"></div>
@@ -223,7 +233,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.30');
+LOG.info('游戏脚本加载完成 v0.31.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -560,6 +570,8 @@ function writeSave() {
 }
 const save = loadSave();
 save.records = save.records || { time: 0, kills: 0, damage: 0 };
+save.achievements = save.achievements || {}; // 成就解锁表
+save.charWins = save.charWins || {};         // 各角色通关记录（三角色通关成就用）
 save.meta = save.meta || { dmg: 0, hp: 0, moveSpeed: 0, pickup: 0, cdr: 0, xpBonus: 0 }; // 局外属性存档
 save.settings = save.settings || { muted: false, volumeLv: 2 }; // 设置项（静音/音量档记忆）
 game.coins = save.coins || 0; // 关键修复：金币回填（之前重开会丢档被覆盖）
@@ -2158,6 +2170,7 @@ function killEnemy(e) {
   game.kills++;
   // 连杀系统：持续击杀累积连杀数，屏幕中央跳大字
   game.combo++; game.comboT = 2.5; game.comboScale = 1;
+  if (game.combo >= 100) unlockAchievement('combo_100'); // 百杀连击
   AudioSys.play('pop');
   // 方案B 嗜血：击杀回复0.3生命/级（割得越爽回得越多）
   const bt = 0.3 * (player.passives.bloodthirst || 0);
@@ -2218,6 +2231,7 @@ function damagePlayer(dmg, attacker) {
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
   // 荆棘光环反伤：攻击者挨刺（进化：荆棘领域翻倍）
+  if (attacker && attacker.type === 'boss') game.bossHitPlayer = true; // 无伤Boss成就标记
   const thornW = player.weapons.thorn;
   if (attacker && !attacker.dead && thornW && (attacker.hitT.thorn || 0) <= 0) {
     attacker.hitT.thorn = 0.5;
@@ -2282,9 +2296,10 @@ function generateOptions() {
 
 function optionInfo(opt) {
   if (opt.type === 'evolution') return { icon: opt.ev.icon, name: opt.ev.name, desc: opt.ev.desc, evo: true };
-  if (opt.type === 'newWeapon') return { icon: WEAPON_DEFS[opt.id].icon, name: WEAPON_DEFS[opt.id].name, desc: WEAPON_DEFS[opt.id].desc };
-  if (opt.type === 'weaponUp') return { icon: WEAPON_DEFS[opt.id].icon, name: WEAPON_DEFS[opt.id].name + ' 强化', desc: '伤害/效果提升' };
-  if (opt.type === 'newPassive' || opt.type === 'passiveUp') return { icon: PASSIVE_DEFS[opt.id].icon, name: PASSIVE_DEFS[opt.id].name, desc: PASSIVE_DEFS[opt.id].desc };
+  const wd = WEAPON_DEFS[opt.id], pd = PASSIVE_DEFS[opt.id]; // 防御兜底：配置表外 id 不炸
+  if (opt.type === 'newWeapon') return { icon: wd ? wd.icon : '⚔', name: wd ? wd.name : opt.id, desc: wd ? wd.desc : '' };
+  if (opt.type === 'weaponUp') return { icon: wd ? wd.icon : '⚔', name: (wd ? wd.name : opt.id) + ' 强化', desc: '伤害/效果提升' };
+  if (opt.type === 'newPassive' || opt.type === 'passiveUp') return { icon: pd ? pd.icon : '✨', name: pd ? pd.name : opt.id, desc: pd ? pd.desc : '' };
   if (opt.type === 'overflow') return { icon: '🌟', name: '超限强化', desc: '伤害+4% 攻速/范围+2%' };
   return { icon: '🍗', name: '烤鸡腿', desc: '回复 35% 生命' };
 }
@@ -2618,6 +2633,7 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
   save.records.time = Math.max(save.records.time, Math.floor(game.time));
   save.records.kills = Math.max(save.records.kills, game.kills);
   save.records.damage = Math.max(save.records.damage, Math.floor(game.damage));
+  checkAchievements('end'); // 结算全量成就检查
   writeSave();
   game.state = 'settle';
   document.getElementById('settleTitle').textContent =
@@ -2649,6 +2665,11 @@ function victory() {
   if (game.endless) return; // 无尽模式下击杀Boss不结束
   game.flashT = 0.6;
   LOG.info('通关！击杀Boss，存活 ' + fmtTime(game.time) + '，击杀 ' + game.kills);
+  unlockAchievement('first_win'); // 首次通关
+  if (!game.bossHitPlayer) unlockAchievement('no_hit_boss'); // 无伤Boss
+  save.charWins[save.settings.charId || 'hunter'] = true; // 角色通关记录
+  if (Object.keys(save.charWins).length >= Object.keys(CHAR_DEFS).length) unlockAchievement('char_all'); // 三杰齐聚
+  writeSave();
   endRun(true, false);
 }
 function gameOver() {
@@ -2782,6 +2803,46 @@ function openSlotPanel(mode) {
 function fmtTime(t) {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// ============================== 成就系统（长线目标，金币奖励） ==============================
+const ACHIEVEMENTS = [
+  { id: 'first_win',   icon: '🏆', name: '初次屠魔',   desc: '首次击杀最终Boss通关', reward: 100 },
+  { id: 'no_hit_boss', icon: '💎', name: '完美猎手',   desc: '无伤击败最终Boss',     reward: 150 },
+  { id: 'survive_20',  icon: '⏳', name: '不朽之躯',   desc: '单局存活 20 分钟',     reward: 120 },
+  { id: 'combo_100',   icon: '🔥', name: '百杀连击',   desc: '连杀数达到 100',       reward: 80 },
+  { id: 'kill_1000',   icon: '⚔', name: '千人斩',     desc: '单局击杀 1000 只怪',   reward: 80 },
+  { id: 'level_30',    icon: '🌟', name: '超凡成长',   desc: '单局等级达到 30',      reward: 60 },
+  { id: 'all_weapons', icon: '🗡', name: '武器大师',   desc: '单局持有 10 把武器',   reward: 60 },
+  { id: 'bloodmoon_5', icon: '🌕', name: '血月幸存者', desc: '单局经历 5 次血月',    reward: 60 },
+  { id: 'wealth_2000', icon: '💰', name: '家财万贯',   desc: '金币持有达到 2000',    reward: 100 },
+  { id: 'char_all',    icon: '👥', name: '三杰齐聚',   desc: '三个角色各通关一次',   reward: 200 },
+];
+
+function unlockAchievement(id) {
+  if (save.achievements[id]) return;
+  const a = ACHIEVEMENTS.find(x => x.id === id);
+  if (!a) return;
+  save.achievements[id] = true;
+  game.coins += a.reward;
+  writeSave();
+  game.bannerText = '🏆 成就达成 · ' + a.name + '（+' + a.reward + '金）';
+  game.bannerT = 2.6;
+  AudioSys.play('chest');
+  addParticles(player.x, player.y - 20, '#ffd77a', 24, 260);
+  LOG.info('成就解锁：' + a.name + ' +' + a.reward + '金');
+}
+
+function checkAchievements(ctxFlag) {
+  // ctxFlag: 'end'=结算时全量检查 / 'live'=局中轻量检查
+  if (game.kills >= 1000) unlockAchievement('kill_1000');
+  if (game.level >= 30) unlockAchievement('level_30');
+  if (game.coins >= 2000) unlockAchievement('wealth_2000');
+  if (ctxFlag === 'end') {
+    if (game.time >= 1200) unlockAchievement('survive_20');
+    if (Object.keys(player.weapons).length >= 10) unlockAchievement('all_weapons');
+    if ((game.bloodmoonCount || 0) >= 5) unlockAchievement('bloodmoon_5');
+  }
 }
 
 // ============================== 渲染 ==============================
@@ -3402,6 +3463,8 @@ function loop(now) {
   game.bannerT = Math.max(0, game.bannerT - dt);
   game.healTextCd = Math.max(0, game.healTextCd - dt);
   game.bloodT = Math.max(0, game.bloodT - dt);
+  game.achCd = (game.achCd || 0) - dt;
+  if (game.achCd <= 0) { game.achCd = 5; checkAchievements('live'); } // 局中成就巡检
   game.flashT = Math.max(0, game.flashT - dt);
 
   render();
@@ -3554,6 +3617,33 @@ document.getElementById('charBtn').addEventListener('click', () => {
   renderCharPanel();
 });
 document.getElementById('charBack').addEventListener('click', closeCharPanel);
+// —— 成就面板 ——
+function renderAchPanel() {
+  const box = document.getElementById('achCards');
+  const done = ACHIEVEMENTS.filter(a => save.achievements[a.id]).length;
+  document.getElementById('achProgress').textContent = `已达成 ${done} / ${ACHIEVEMENTS.length}　（达成即发金币奖励）`;
+  box.innerHTML = '';
+  for (const a of ACHIEVEMENTS) {
+    const got = !!save.achievements[a.id];
+    const div = document.createElement('div');
+    div.className = 'card' + (got ? ' evo' : '');
+    div.innerHTML = `<div class="icon">${a.icon}</div><div class="name">${a.name}</div>` +
+      `<div class="desc">${a.desc}</div>` +
+      `<div class="tag">${got ? '已达成 ✓' : '奖励 💰' + a.reward}</div>`;
+    box.appendChild(div);
+  }
+}
+function closeAchPanel() {
+  document.getElementById('achPanel').classList.add('hidden');
+  showMenu();
+}
+document.getElementById('achBtn').addEventListener('click', () => {
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('achPanel').classList.remove('hidden');
+  renderAchPanel();
+});
+document.getElementById('achBack').addEventListener('click', closeAchPanel);
+document.getElementById('achClose').addEventListener('click', closeAchPanel);
 document.getElementById('charClose').addEventListener('click', closeCharPanel);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 document.getElementById('vibeBtn').addEventListener('click', () => {
