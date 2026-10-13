@@ -80,6 +80,9 @@
   #audioBtn { position:fixed; top:10px; top:calc(10px + env(safe-area-inset-top)); right:66px; z-index:16;
     width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35);
     background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }
+  #vibeBtn { position:fixed; top:10px; top:calc(10px + env(safe-area-inset-top)); right:66px; z-index:15;
+    width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35);
+    background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }
   #pauseBtn { position:fixed; top:10px; top:calc(10px + env(safe-area-inset-top)); right:12px; z-index:15;
     width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35);
     background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }
@@ -93,12 +96,13 @@
 
 <!-- 暂停按钮 + 静音开关 -->
 <button id="audioBtn" title="静音开关">🔊</button>
+<button id="vibeBtn" title="震动开关">📳</button>
 <button id="pauseBtn" class="hidden">⏸</button>
 
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.29</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.29.2</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -219,7 +223,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.29');
+LOG.info('游戏脚本加载完成 v0.29.2');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -616,7 +620,8 @@ const dist2 = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx +
 function shake(mag, t) { game.shakeMag = Math.max(game.shakeMag, mag); game.shakeT = Math.max(game.shakeT, t); }
 // 移动端震动反馈（桌面浏览器自动忽略）
 function vibrate(pattern) {
-  if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) { /* 不支持则忽略 */ } }
+  if (save.settings.vibrateOff) return; // 震动开关（老大反馈震动关不掉）
+  if (navigator.vibrate) navigator.vibrate(pattern);
 }
 
 // 伤害飘字（对象池 + 封顶60：防后期飘字海 GC 卡顿）
@@ -3011,6 +3016,27 @@ function render() {
   // ---- 暗角氛围（世界层之上、UI之下）----
   ctx.drawImage(vignette, 0, 0, W, H);
 
+  // ---- Boss 血条（顶部常驻：最终Boss/阶段小Boss，大血条+名字）----
+  {
+    const bossUnit = enemies.find(e => !e.dead && (e.type === 'boss' || e.miniBoss));
+    if (bossUnit) {
+      const bName = bossUnit.type === 'boss' ? '⚠ 最终BOSS · 大恶魔兽' :
+        { mb_bandit: '阶段BOSS · 狂暴酋长', mb_eye: '阶段BOSS · 深渊魔眼', mb_spider: '阶段BOSS · 蛛后', mb_bone: '阶段BOSS · 骸骨君王' }[bossUnit.type] || '阶段BOSS';
+      const bw = Math.min(W * 0.72, 420), bx = (W - bw) / 2, by = 12;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; roundRect(bx - 4, by - 4, bw + 8, 28, 9); ctx.fill();
+      ctx.fillStyle = '#2a0c18'; roundRect(bx, by + 14, bw, 10, 5); ctx.fill();
+      const ratio = clamp(bossUnit.hp / bossUnit.maxHp, 0, 1);
+      ctx.fillStyle = bossUnit.type === 'boss' ? '#ff4d5e' : '#b070ff';
+      roundRect(bx, by + 14, bw * ratio, 10, 5); ctx.fill();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold 13px "Microsoft YaHei",sans-serif';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.strokeText(bName, W / 2, by + 6);
+      ctx.fillStyle = bossUnit.type === 'boss' ? '#ffd7da' : '#e2c9ff';
+      ctx.fillText(bName, W / 2, by + 6);
+    }
+  }
+
   // ---- 血月夜空（血月事件期间红光笼罩，整屏均匀呼吸）----
   if (game.bloodT > 0) {
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 350);
@@ -3373,6 +3399,14 @@ document.getElementById('charBtn').addEventListener('click', () => {
 document.getElementById('charBack').addEventListener('click', closeCharPanel);
 document.getElementById('charClose').addEventListener('click', closeCharPanel);
 document.getElementById('shopClose').addEventListener('click', closeShop);
+document.getElementById('vibeBtn').addEventListener('click', () => {
+  // 震动开关切换（记忆到存档）
+  save.settings.vibrateOff = !save.settings.vibrateOff;
+  writeSave();
+  document.getElementById('vibeBtn').textContent = save.settings.vibrateOff ? '🔕' : '📳';
+  LOG.info('震动开关：' + (save.settings.vibrateOff ? '关' : '开'));
+  if (!save.settings.vibrateOff) vibrate(30); // 开启时轻震一下作为确认
+});
 document.getElementById('audioBtn').addEventListener('click', () => {
   // 音量三档循环：🔊全开 → 🔉半音 → 🔇静音（点击也算用户手势，顺手 init）
   AudioSys.init();
@@ -3391,6 +3425,7 @@ function showMenu() {
 }
 showMenu();
 document.getElementById('audioBtn').textContent = ['🔇', '🔉', '🔊'][save.settings.volumeLv !== undefined ? save.settings.volumeLv : (save.settings.muted ? 0 : 2)]; // 同步音量档记忆
+document.getElementById('vibeBtn').textContent = save.settings.vibrateOff ? '🔕' : '📳'; // 同步震动开关记忆
 AudioSys.muted = save.settings.muted; // 启动即同步静音状态
 // 音频解锁保险：任何首次触摸/点击都尝试 init（部分手机 webview 对手势解锁挑剔）
 document.addEventListener('touchstart', () => AudioSys.init(), { once: true, passive: true });
