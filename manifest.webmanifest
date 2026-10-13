@@ -1,0 +1,16 @@
+{
+  "name": "暗黑幸存者",
+  "short_name": "暗黑幸存者",
+  "description": "类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0e0b14",
+  "theme_color": "#15121b",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
