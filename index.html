@@ -102,11 +102,12 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.31.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.32</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
+  <button class="btn sub" id="diffBtn">难度：普通</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
@@ -233,7 +234,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.31.1');
+LOG.info('游戏脚本加载完成 v0.32');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -572,8 +573,10 @@ const save = loadSave();
 save.records = save.records || { time: 0, kills: 0, damage: 0 };
 save.achievements = save.achievements || {}; // 成就解锁表
 save.charWins = save.charWins || {};         // 各角色通关记录（三角色通关成就用）
+save.hellUnlocked = !!save.hellUnlocked;     // 地狱难度解锁（通关开启）
 save.meta = save.meta || { dmg: 0, hp: 0, moveSpeed: 0, pickup: 0, cdr: 0, xpBonus: 0 }; // 局外属性存档
 save.settings = save.settings || { muted: false, volumeLv: 2 }; // 设置项（静音/音量档记忆）
+save.settings.difficulty = save.settings.difficulty || 0; // 难度选择记忆 0普通/1地狱（须在 settings 初始化后）
 game.coins = save.coins || 0; // 关键修复：金币回填（之前重开会丢档被覆盖）
 
 // ============================== 输入层 ==============================
@@ -1395,7 +1398,10 @@ function recomputeStats() {
 
 // ============================== 敌人生成与难度曲线 ==============================
 // 血量双成长：线性 + 每3分钟阶梯抬升（压迫感）
-function hpMult() { return (1 + game.time / 160) * (1 + Math.floor(game.time / 180) * 0.25); } // 平衡放缓：15分钟约15倍（原32倍太肉）
+function hpMult() {
+  const hell = (save.settings.difficulty || 0) === 1 ? 1.5 : 1; // 地狱难度：血量×1.5
+  return (1 + game.time / 160) * (1 + Math.floor(game.time / 180) * 0.25) * hell;
+} // 平衡放缓：15分钟约15倍（原32倍太肉）
 function dmgMult() { return 1 + Math.floor(game.time / 180) * 0.25; }
 
 const ENEMY_TYPES = {
@@ -1420,7 +1426,8 @@ const ENEMY_TYPES = {
 
 // 经验价值随时间通胀：与怪血成长同节奏（每90秒+1倍），怪变强经验同步涨，后期升级不掉队
 function xpMult() {
-  return 1 + game.time / 90;
+  const hell = (save.settings.difficulty || 0) === 1 ? 1.3 : 1; // 地狱难度：经验×1.3 风险回报
+  return (1 + game.time / 90) * hell;
 }
 
 // 怪物阵容随时间换血：每阶段解锁更强新怪，后期越来越强
@@ -1439,7 +1446,8 @@ function pickEnemyType(t) {
 
 // 怪物词缀：出现率随时间上涨（8%起，约+2.5%/分钟，上限35%）——每波怪海都不一样
 function pickAffix() {
-  const chance = Math.min(0.35, 0.08 + game.time / 2400);
+  const hell = (save.settings.difficulty || 0) === 1;
+  const chance = Math.min(hell ? 0.6 : 0.35, (hell ? 0.16 : 0.08) + game.time / 2400); // 地狱：词缀率翻倍
   if (Math.random() > chance) return null;
   const pool = ['swift', 'bulky', 'split', 'summoner'];
   return pool[Math.floor(Math.random() * pool.length)];
@@ -2666,6 +2674,11 @@ function victory() {
   game.flashT = 0.6;
   LOG.info('通关！击杀Boss，存活 ' + fmtTime(game.time) + '，击杀 ' + game.kills);
   unlockAchievement('first_win'); // 首次通关
+  if (!save.hellUnlocked) {
+    save.hellUnlocked = true; // 通关解锁地狱难度
+    game.bannerText = '🌋 地 狱 难 度 已 解 锁 ！'; game.bannerT = 2.8;
+    LOG.info('地狱难度解锁');
+  }
   if (!game.bossHitPlayer) unlockAchievement('no_hit_boss'); // 无伤Boss
   save.charWins[save.settings.charId || 'hunter'] = true; // 角色通关记录
   if (Object.keys(save.charWins).length >= Object.keys(CHAR_DEFS).length) unlockAchievement('char_all'); // 三杰齐聚
@@ -3534,6 +3547,7 @@ function renderStatPanel() {
     ['🩸 汲取', (0.5 * (player.passives.lifesteal || 0)).toFixed(1) + '%伤'],
     ['😈 嗜血', (0.3 * (player.passives.bloodthirst || 0)).toFixed(1) + '/杀'],
     ['🌟 超限', 'Lv' + (game.overflowN || 0)],
+    ['🌋 难度', (save.settings.difficulty || 0) === 1 ? '地狱' : '普通'],
   ];
   document.getElementById('statPanel').innerHTML =
     rows.map(([k, v]) => `${k} <b>${v}</b>`).join('　');
@@ -3644,6 +3658,22 @@ document.getElementById('achBtn').addEventListener('click', () => {
 });
 document.getElementById('achBack').addEventListener('click', closeAchPanel);
 document.getElementById('achClose').addEventListener('click', closeAchPanel);
+// —— 难度切换：普通/地狱（通关解锁）——
+function renderDiffBtn() {
+  const btn = document.getElementById('diffBtn');
+  const cur = (save.settings.difficulty || 0) === 1;
+  btn.textContent = save.hellUnlocked ? (cur ? '难度：地狱 🌋' : '难度：普通') : '难度：地狱（通关解锁🔒）';
+}
+document.getElementById('diffBtn').addEventListener('click', () => {
+  if (!save.hellUnlocked) {
+    LOG.info('地狱难度未解锁：先通关一次');
+    return;
+  }
+  save.settings.difficulty = (save.settings.difficulty || 0) === 1 ? 0 : 1;
+  writeSave();
+  renderDiffBtn();
+  LOG.info('切换难度：' + (save.settings.difficulty === 1 ? '地狱' : '普通'));
+});
 document.getElementById('charClose').addEventListener('click', closeCharPanel);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 document.getElementById('vibeBtn').addEventListener('click', () => {
@@ -3664,6 +3694,7 @@ document.getElementById('audioBtn').addEventListener('click', () => {
 
 function showMenu() {
   game.state = 'menu';
+  renderDiffBtn();
   document.getElementById('menuRecords').innerHTML =
     `金币 <b>${game.coins}</b>　历史最佳：存活 <b>${fmtTime(save.records.time)}</b>　击杀 <b>${save.records.kills}</b>　伤害 <b>${save.records.damage.toLocaleString()}</b>`;
   document.getElementById('shop').classList.add('hidden');
