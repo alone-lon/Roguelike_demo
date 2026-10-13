@@ -91,7 +91,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.26</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.26.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -211,7 +211,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.26');
+LOG.info('游戏脚本加载完成 v0.26.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -738,7 +738,8 @@ function drawHero(x, y, s, facing) {
   const blink = (Math.sin(now / 1600) > 0.97) ? 0.12 : 1;
   const swingP = player.swingT > 0 ? (1 - player.swingT / 0.22) : -1;
   const OUT = 'rgba(8,3,18,0.78)';
-  const CH = CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter; // 角色专属配色
+  const CID = save.settings.charId || 'hunter'; // 角色造型分支
+  const CH = CHAR_DEFS[CID] || CHAR_DEFS.hunter; // 角色专属配色
   const C = CH.colors;
 
   ctx.save();
@@ -793,7 +794,52 @@ function drawHero(x, y, s, facing) {
   ctx.fillStyle = C.trim; // 肩甲小尖刺
   ctx.beginPath(); ctx.moveTo(11 * s, -9.5 * s); ctx.lineTo(15 * s, -13 * s); ctx.lineTo(12.5 * s, -7 * s); ctx.closePath(); ctx.fill();
   ctx.restore();
-  // 连帽斗篷（阴影罩脸+帽尖后垂+帽檐红边）
+  // —— 头部：三角色三种造型 ——
+  if (CID === 'paladin') {
+    // 圣骑士：全罩重盔 + 盔缨羽冠 + 发光目缝
+    ctx.fillStyle = C.hood;
+    ctx.beginPath(); ctx.arc(1 * s, -30 * s, 11 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+    ctx.fillStyle = C.plate; // 盔面
+    roundRect(-6 * s, -33 * s, 15 * s, 9 * s, 4 * s); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.4 * s; ctx.stroke();
+    ctx.fillStyle = C.trim; // 盔缨羽冠
+    ctx.beginPath();
+    ctx.moveTo(-3 * s, -40 * s);
+    ctx.quadraticCurveTo(0, -53 * s, 7 * s, -48 * s);
+    ctx.quadraticCurveTo(3 * s, -44 * s, 2.5 * s, -38 * s);
+    ctx.closePath(); ctx.fill();
+    const eyeGlow = ctx.createRadialGradient(3 * s, -28.5 * s, 0, 3 * s, -28.5 * s, 6.5 * s);
+    eyeGlow.addColorStop(0, C.eye + '0.5)');
+    eyeGlow.addColorStop(1, C.eye + '0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.beginPath(); ctx.arc(3 * s, -28.5 * s, 6.5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.eye + '0.95)'; // 目缝金光
+    roundRect(-2 * s, -29.6 * s, 11 * s, 2.6 * s * blink, 1.3 * s); ctx.fill();
+  } else if (CID === 'warlock') {
+    // 血巫师：宽檐尖顶法帽 + 阴影脸粉瞳 + 帽带
+    ctx.fillStyle = C.hood; // 宽帽檐
+    ctx.beginPath(); ctx.ellipse(1 * s, -33 * s, 16 * s, 5 * s, -0.12, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+    ctx.beginPath(); // 歪尖顶
+    ctx.moveTo(-7 * s, -35 * s);
+    ctx.quadraticCurveTo(-3 * s, -53 * s, 10 * s, -50 * s);
+    ctx.quadraticCurveTo(5 * s, -44 * s, 8.5 * s, -35 * s);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#0d0818'; // 帽下阴影脸
+    ctx.beginPath(); ctx.ellipse(1.5 * s, -28 * s, 8 * s, 7 * s, 0, 0, Math.PI * 2); ctx.fill();
+    const eyeGlow = ctx.createRadialGradient(3 * s, -28.5 * s, 0, 3 * s, -28.5 * s, 5.5 * s);
+    eyeGlow.addColorStop(0, C.eye + '0.5)');
+    eyeGlow.addColorStop(1, C.eye + '0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.beginPath(); ctx.arc(3 * s, -28.5 * s, 5.5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff9db0';
+    ctx.beginPath(); ctx.ellipse(1.2 * s, -28.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(7 * s, -28.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.trim; ctx.lineWidth = 2 * s; // 帽带
+    ctx.beginPath(); ctx.moveTo(-7 * s, -34.5 * s); ctx.quadraticCurveTo(1 * s, -31 * s, 9 * s, -34.5 * s); ctx.stroke();
+  } else {
+  // 死灵猎人：连帽斗篷（阴影罩脸+帽尖后垂+帽檐红边）
   ctx.fillStyle = C.hood;
   ctx.beginPath();
   ctx.moveTo(-11 * s, -26 * s);
@@ -822,30 +868,82 @@ function drawHero(x, y, s, facing) {
   ctx.beginPath(); ctx.ellipse(7 * s, -29.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(150,35,55,0.65)'; ctx.lineWidth = 1.6 * s; // 帽檐暗红内衬线
   ctx.beginPath(); ctx.moveTo(-8 * s, -24.5 * s); ctx.quadraticCurveTo(1 * s, -19.5 * s, 10 * s, -25 * s); ctx.stroke();
-  // 符文血刃魔剑手臂（挥剑斩击弧/待机小晃）
-  const armA = swingP >= 0 ? (-1.7 + swingP * 2.6) : (-0.55 + Math.sin(now / 700) * 0.08);
-  ctx.save();
-  ctx.translate(8 * s, -17 * s);
-  ctx.rotate(armA);
-  ctx.fillStyle = '#241a3e'; // 暗甲袖
-  roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
-  ctx.fillStyle = '#120b22'; // 暗手套
-  ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#2b2440'; // 暗色剑身
-  roundRect(-1.9 * s, 11 * s, 3.8 * s, 15 * s, 1.6 * s); ctx.fill();
-  ctx.fillStyle = '#c93048'; // 血色刃线
-  ctx.fillRect(-0.7 * s, 12 * s, 1.4 * s, 13 * s);
-  ctx.fillStyle = '#c9a24a'; // 金剑格
-  ctx.fillRect(-5 * s, 9.6 * s, 10 * s, 2.8 * s);
-  ctx.fillStyle = '#3a2c5a'; // 剑柄
-  roundRect(-1.6 * s, 21.5 * s, 3.2 * s, 3.5 * s, 1.2 * s); ctx.fill();
-  if (swingP >= 0) { // 挥剑暗红残影
-    ctx.globalAlpha = 0.42 * (1 - swingP);
-    ctx.strokeStyle = '#c93048'; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, 12 * s, 15 * s, -1.3, 0.5); ctx.stroke();
-    ctx.globalAlpha = 1;
   }
-  ctx.restore();
+  // —— 武器：三角色三种 ——
+  const armA = swingP >= 0 ? (-1.7 + swingP * 2.6) : (-0.55 + Math.sin(now / 700) * 0.08);
+  if (CID === 'paladin') {
+    // 圣骑士：左手塔盾（不随挥舞）+ 右手银白长剑
+    ctx.fillStyle = C.trim;
+    ctx.beginPath(); ctx.ellipse(-11.5 * s, -12 * s, 6.5 * s, 8.5 * s, 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+    ctx.fillStyle = C.plate; // 盾心
+    ctx.beginPath(); ctx.arc(-11.5 * s, -12 * s, 3.2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.translate(8 * s, -17 * s);
+    ctx.rotate(armA);
+    ctx.fillStyle = C.body; roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
+    ctx.fillStyle = '#120b22'; ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c9d2e8'; // 银白宽刃长剑
+    roundRect(-2.6 * s, 11 * s, 5.2 * s, 19 * s, 1.8 * s); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(-0.8 * s, 12 * s, 1.6 * s, 17 * s); // 刃面高光
+    ctx.fillStyle = '#c9a24a'; ctx.fillRect(-6 * s, 9.6 * s, 12 * s, 3 * s); // 金剑格
+    ctx.fillStyle = '#8a7a4a'; roundRect(-1.8 * s, 25 * s, 3.6 * s, 4 * s, 1.3 * s); ctx.fill();
+    if (swingP >= 0) {
+      ctx.globalAlpha = 0.4 * (1 - swingP);
+      ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 12 * s, 16 * s, -1.3, 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  } else if (CID === 'warlock') {
+    // 血巫师：血色法珠长杖（杖头发光法球）
+    ctx.save();
+    ctx.translate(8 * s, -17 * s);
+    ctx.rotate(armA * 0.7);
+    ctx.fillStyle = C.body; roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
+    ctx.fillStyle = '#120b22'; ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a2c2a'; roundRect(-1.5 * s, -13 * s, 3 * s, 27 * s, 1.5 * s); ctx.fill(); // 杖杆
+    const orbG = ctx.createRadialGradient(0, -17 * s, 0, 0, -17 * s, 9 * s);
+    orbG.addColorStop(0, C.eye + '0.9)');
+    orbG.addColorStop(1, C.eye + '0)');
+    ctx.fillStyle = orbG;
+    ctx.beginPath(); ctx.arc(0, -17 * s, 9 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.trim; // 血色法珠
+    ctx.beginPath(); ctx.arc(0, -17 * s, 4.2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; // 法珠高光
+    ctx.beginPath(); ctx.arc(-1.4 * s, -18.5 * s, 1.3 * s, 0, Math.PI * 2); ctx.fill();
+    if (swingP >= 0) {
+      ctx.globalAlpha = 0.35 * (1 - swingP);
+      ctx.strokeStyle = C.trim; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 12 * s, 15 * s, -1.3, 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  } else {
+    // 死灵猎人：符文血刃魔剑（挥剑斩击弧/待机小晃）
+    ctx.save();
+    ctx.translate(8 * s, -17 * s);
+    ctx.rotate(armA);
+    ctx.fillStyle = '#241a3e'; // 暗甲袖
+    roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
+    ctx.fillStyle = '#120b22'; // 暗手套
+    ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2b2440'; // 暗色剑身
+    roundRect(-1.9 * s, 11 * s, 3.8 * s, 15 * s, 1.6 * s); ctx.fill();
+    ctx.fillStyle = '#c93048'; // 血色刃线
+    ctx.fillRect(-0.7 * s, 12 * s, 1.4 * s, 13 * s);
+    ctx.fillStyle = '#c9a24a'; // 金剑格
+    ctx.fillRect(-5 * s, 9.6 * s, 10 * s, 2.8 * s);
+    ctx.fillStyle = '#3a2c5a'; // 剑柄
+    roundRect(-1.6 * s, 21.5 * s, 3.2 * s, 3.5 * s, 1.2 * s); ctx.fill();
+    if (swingP >= 0) { // 挥剑暗红残影
+      ctx.globalAlpha = 0.42 * (1 - swingP);
+      ctx.strokeStyle = '#c93048'; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 12 * s, 15 * s, -1.3, 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
   ctx.restore();
 }
 
