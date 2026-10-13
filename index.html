@@ -112,7 +112,7 @@
   <canvas id="splashFx"></canvas>
   <div id="splashVig"></div>
   <div id="splashTitle">
-    <img class="st-main-img" src="title.png" alt="暗黑幸存者">
+    <div class="st-main">暗 黑 幸 存 者</div>
     <div class="st-sub">R O G U E L I K E · 割 草 暗 黑 幻 想</div>
   </div>
   <div id="splashEnter">点 击 任 意 处 进 入</div>
@@ -155,16 +155,19 @@
   #settle .pageBg { opacity:0.5; }
   #menu > *:not(.pageBg), #settle > *:not(.pageBg) { position:relative; z-index:1; }
   /* 艺术字标题（title.png 华文新魏金属浮雕） */
-  .st-main-img { width:min(92vw, 1080px); height:auto; display:block; margin:0 auto;
-    animation:titleFloat 5s ease-in-out infinite; } /* 标题按宽度铺满——老大要大字（再加大） */
-  .title-img { width:min(68vw, 520px); height:auto; display:block; margin:0 auto;
-    filter:drop-shadow(0 4px 22px rgba(255,140,50,0.35)); }
+  .st-main { font-family:"GameSans",sans-serif; font-weight:900; /* 思源黑（内嵌OFL）直接渲染——和副标题同步显示 */
+    font-size:clamp(44px,11vw,116px); letter-spacing:clamp(2px,1.2vw,12px);
+    background:linear-gradient(180deg,#ffe9a0 0%,#ffb347 42%,#e0862e 72%,#ffd77a 100%);
+    background-size:100% 220%; -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:3.5px #241004; paint-order:stroke fill; /* 加厚描边补思源黑的分量 */ /* 暗黑描边（衬在字底下） */
+    filter:drop-shadow(2px 4px 0 rgba(18,7,2,0.9)) drop-shadow(0 6px 34px rgba(255,150,50,0.42)); /* 立体投影+辉光 */
+    animation:titleShine 6s ease-in-out infinite alternate, titleFloat 5s ease-in-out infinite; }
 </style>
 
 <div id="menu" class="overlay">
   <img class="pageBg" src="menu-bg.jpg" alt="">
-  <img class="title-img" src="title.png" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.40</b></div>
+  <div class="title">暗黑幸存者</div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.40.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -313,7 +316,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.40');
+LOG.info('游戏脚本加载完成 v0.40.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
