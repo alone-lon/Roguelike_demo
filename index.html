@@ -91,9 +91,10 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.25.2</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.26</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
+  <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
@@ -150,9 +151,19 @@
   <button class="btn sub" id="slotBack">返 回</button>
 </div>
 
+<!-- 角色选择面板 -->
+<div id="charPanel" class="overlay hidden">
+  <button id="charClose" title="关闭">✕</button>
+  <div class="title" style="font-size:clamp(22px,5vw,40px)">👤 选 择 角 色</div>
+  <div class="subtitle">不同角色初始武器与加成不同（下局生效）</div>
+  <div class="cards" id="charCards"></div>
+  <button class="btn sub" id="charBack">返 回</button>
+</div>
+
 <!-- 升级商店（局外永久属性，下局生效） -->
 <div id="shop" class="overlay hidden">
   <button id="shopClose" title="关闭">✕</button>
+  <style>#charClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
   <div class="title" style="font-size:clamp(22px,5vw,40px)">升 级 商 店</div>
   <div class="subtitle" id="shopCoins">金币：0　（属性下局生效）</div>
   <div class="cards" id="shopItems"></div>
@@ -200,7 +211,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.25.2');
+LOG.info('游戏脚本加载完成 v0.26');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -424,6 +435,28 @@ const PASSIVE_DEFS = {
   pickup:    { name:'拾取范围', icon:'🧲', desc:'拾取 +30%' },
   lifesteal: { name:'生命汲取', icon:'🩸', desc:'伤害0.5%/级转生命' },
   bloodthirst: { name:'嗜血', icon:'😈', desc:'击杀回复0.3生命/级' },
+};
+
+// 角色配置表（加角色=加一行）：初始武器 + 专属加成 + 专属配色
+const CHAR_DEFS = {
+  hunter: {
+    name: '死灵猎人', icon: '🥷', weapon: 'arrow',
+    desc: '均衡全能的暗影猎手', bonus: '伤害 +10%',
+    dmg: 1.10, atkSpeed: 1, speed: 1, hpBonus: 0,
+    colors: { cape: '#221543', body: '#241a3e', plate: '#2e2252', hood: '#1a1132', legs: '#1c1430', boots: '#43336a', trim: '#8a2030', inner: 'rgba(140,30,50,0.5)', eye: 'rgba(125,240,255,' },
+  },
+  paladin: {
+    name: '圣骑士', icon: '🛡', weapon: 'hammer',
+    desc: '金甲重装的圣光卫士', bonus: '生命 +40 · 移速 +8%',
+    dmg: 1, atkSpeed: 1, speed: 1.08, hpBonus: 40,
+    colors: { cape: '#e8dcc0', body: '#cfc4a8', plate: '#e6d9b8', hood: '#b8a878', legs: '#a89868', boots: '#8a7a4a', trim: '#c9a24a', inner: 'rgba(201,162,74,0.5)', eye: 'rgba(255,233,168,' },
+  },
+  warlock: {
+    name: '血巫师', icon: '🧙', weapon: 'poison',
+    desc: '以血为刃的猩红术士', bonus: '伤害 +15% · 攻速 +15% · 生命 -25',
+    dmg: 1.15, atkSpeed: 1.15, speed: 0.95, hpBonus: -25,
+    colors: { cape: '#4a1220', body: '#3a0f1a', plate: '#5c1622', hood: '#2a0a12', legs: '#2a0a12', boots: '#5c1622', trim: '#c9506a', inner: 'rgba(201,80,106,0.5)', eye: 'rgba(255,125,146,' },
+  },
 };
 
 // 进化公式配置表 —— 预留扩展位：加新进化公式只需加一行
@@ -705,6 +738,8 @@ function drawHero(x, y, s, facing) {
   const blink = (Math.sin(now / 1600) > 0.97) ? 0.12 : 1;
   const swingP = player.swingT > 0 ? (1 - player.swingT / 0.22) : -1;
   const OUT = 'rgba(8,3,18,0.78)';
+  const CH = CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter; // 角色专属配色
+  const C = CH.colors;
 
   ctx.save();
   ctx.translate(x, y);
@@ -717,7 +752,7 @@ function drawHero(x, y, s, facing) {
   ctx.beginPath(); ctx.ellipse(0, -2 * s, 20 * s, 11 * s, 0, 0, Math.PI * 2); ctx.fill();
   // 破烂披风（锯齿下摆+暗红内衬+随风摆）
   const cw = capeSwing;
-  ctx.fillStyle = '#221543';
+  ctx.fillStyle = C.cape;
   ctx.beginPath();
   ctx.moveTo(-5 * s, -20 * s);
   ctx.quadraticCurveTo(-18 * s + cw, -12 * s, -15 * s + cw, -2 * s);
@@ -728,7 +763,7 @@ function drawHero(x, y, s, facing) {
   ctx.lineTo(0, -8 * s);
   ctx.closePath(); ctx.fill();
   ctx.strokeStyle = OUT; ctx.lineWidth = 1.6 * s; ctx.stroke();
-  ctx.fillStyle = 'rgba(140,30,50,0.5)'; // 暗红内衬
+  ctx.fillStyle = C.inner; // 披风内衬
   ctx.beginPath();
   ctx.moveTo(-6 * s, -19 * s);
   ctx.quadraticCurveTo(-15 * s + cw, -11 * s, -12.5 * s + cw, -4 * s);
@@ -737,29 +772,29 @@ function drawHero(x, y, s, facing) {
   // 腿甲（走路交替摆+钢质靴头）
   for (const dir of [-1, 1]) {
     ctx.save(); ctx.translate(dir * 4 * s, -6 * s); ctx.rotate(dir * legSwing);
-    ctx.fillStyle = '#1c1430';
+    ctx.fillStyle = C.legs;
     roundRect(-2.6 * s, 0, 5.2 * s, 8 * s, 2.2 * s); ctx.fill();
-    ctx.fillStyle = '#43336a'; ctx.fillRect(-2.6 * s, 5.6 * s, 5.2 * s, 2.4 * s);
+    ctx.fillStyle = C.boots; ctx.fillRect(-2.6 * s, 5.6 * s, 5.2 * s, 2.4 * s);
     ctx.restore();
   }
   // 暗甲躯干（呼吸起伏+胸甲板+腰带金扣+剑侧肩甲）
   ctx.save(); ctx.translate(0, -13 * s); ctx.scale(1 / breathe, breathe);
-  ctx.fillStyle = '#241a3e';
+  ctx.fillStyle = C.body;
   roundRect(-9 * s, -9 * s, 18 * s, 18 * s, 6 * s); ctx.fill();
   ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
-  ctx.fillStyle = '#2e2252';
+  ctx.fillStyle = C.plate;
   roundRect(-6.5 * s, -7 * s, 13 * s, 11 * s, 4 * s); ctx.fill();
   ctx.fillStyle = 'rgba(160,140,255,0.16)'; // 胸甲棱线高光
   roundRect(-5 * s, -6 * s, 3.2 * s, 7 * s, 1.6 * s); ctx.fill();
   ctx.fillStyle = '#120b22'; ctx.fillRect(-9 * s, 3 * s, 18 * s, 3.2 * s); // 腰带
   ctx.fillStyle = '#c9a24a'; ctx.fillRect(-1.8 * s, 2.6 * s, 3.6 * s, 4 * s); // 金扣
-  ctx.fillStyle = '#2e2252'; // 肩甲
+  ctx.fillStyle = C.plate; // 肩甲
   ctx.beginPath(); ctx.ellipse(8.5 * s, -7 * s, 5 * s, 3.4 * s, -0.35, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#8a2030'; // 肩甲小尖刺
+  ctx.fillStyle = C.trim; // 肩甲小尖刺
   ctx.beginPath(); ctx.moveTo(11 * s, -9.5 * s); ctx.lineTo(15 * s, -13 * s); ctx.lineTo(12.5 * s, -7 * s); ctx.closePath(); ctx.fill();
   ctx.restore();
   // 连帽斗篷（阴影罩脸+帽尖后垂+帽檐红边）
-  ctx.fillStyle = '#1a1132';
+  ctx.fillStyle = C.hood;
   ctx.beginPath();
   ctx.moveTo(-11 * s, -26 * s);
   ctx.quadraticCurveTo(-11 * s, -41 * s, 1 * s, -41 * s);
@@ -768,7 +803,7 @@ function drawHero(x, y, s, facing) {
   ctx.quadraticCurveTo(-8 * s, -21 * s, -11 * s, -26 * s);
   ctx.closePath(); ctx.fill();
   ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
-  ctx.fillStyle = '#1a1132'; // 帽尖后垂
+  ctx.fillStyle = C.hood; // 帽尖后垂
   ctx.beginPath();
   ctx.moveTo(-10 * s, -34 * s);
   ctx.quadraticCurveTo(-17 * s, -36 * s, -16 * s, -27 * s + capeSwing * 0.3);
@@ -778,8 +813,8 @@ function drawHero(x, y, s, facing) {
   ctx.beginPath(); ctx.ellipse(1.5 * s, -29 * s, 8.5 * s, 7.5 * s, 0, 0, Math.PI * 2); ctx.fill();
   // 发光双目（冷青色幽光+眨眼变暗）
   const eyeGlow = ctx.createRadialGradient(3 * s, -29.5 * s, 0, 3 * s, -29.5 * s, 5.5 * s);
-  eyeGlow.addColorStop(0, 'rgba(125,240,255,0.5)');
-  eyeGlow.addColorStop(1, 'rgba(125,240,255,0)');
+  eyeGlow.addColorStop(0, C.eye + '0.5)');
+  eyeGlow.addColorStop(1, C.eye + '0)');
   ctx.fillStyle = eyeGlow;
   ctx.beginPath(); ctx.arc(3 * s, -29.5 * s, 5.5 * s, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#7df0ff';
@@ -1206,16 +1241,18 @@ groundTileA.height = groundTileB.height = 64;
 function recomputeStats() {
   const p = player.passives, m = save.meta; // 局内被动 + 局外永久属性双层叠加
   const ov = game.overflowN || 0; // 超限强化层数：全满后无限成长（+4%伤/+2%速/+2%围）
-  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov);
-  player.atkSpeedMult = (1 + 0.10 * (p.atkSpeed || 0)) * (1 + 0.02 * ov);
+  const ch = CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter; // 角色专属加成
+  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov) * ch.dmg;
+  player.atkSpeedMult = (1 + 0.10 * (p.atkSpeed || 0)) * (1 + 0.02 * ov) * ch.atkSpeed;
   player.areaMult = (1 + 0.12 * (p.area || 0)) * (1 + 0.02 * ov);
   player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0));
   player.projSpeedMult = 1 + 0.12 * (p.projSpeed || 0);
-  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0));
+  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0)) * ch.speed;
   player.pickup = 110 * (1 + 0.30 * (p.pickup || 0)) * (1 + 0.10 * (m.pickup || 0));
-  const newMax = CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0);
+  const newMax = CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0) + ch.hpBonus;
   if (newMax > player.maxHp) player.hp += newMax - player.maxHp; // 加上限时补差值
   player.maxHp = newMax;
+  player.hp = Math.min(player.hp, player.maxHp); // 血巫师负加成防溢出
 }
 
 // ============================== 敌人生成与难度曲线 ==============================
@@ -2340,7 +2377,7 @@ function startGame() {
   minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
-  giveWeapon('arrow'); // 初始武器：暗影箭
+  giveWeapon((CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter).weapon); // 初始武器随角色
   recomputeStats();
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('settle').classList.add('hidden');
@@ -3173,6 +3210,38 @@ function closeShop() {
   showMenu();
 }
 document.getElementById('shopBack').addEventListener('click', closeShop);
+// —— 角色选择：点卡片选中并落盘 ——
+function renderCharPanel() {
+  const box = document.getElementById('charCards');
+  box.innerHTML = '';
+  const cur = save.settings.charId || 'hunter';
+  for (const id in CHAR_DEFS) {
+    const c = CHAR_DEFS[id];
+    const div = document.createElement('div');
+    div.className = 'card' + (id === cur ? ' evo' : '');
+    div.innerHTML = `<div class="icon">${c.icon}</div><div class="name">${c.name}</div>` +
+      `<div class="desc">${c.desc}<br><b style="color:#ffd77a">${c.bonus}</b><br>初始武器：${WEAPON_DEFS[c.weapon].name}</div>` +
+      `<div class="tag">${id === cur ? '当前选择 ✓' : '点击选择'}</div>`;
+    div.addEventListener('click', () => {
+      save.settings.charId = id;
+      writeSave();
+      LOG.info('选择角色：' + c.name);
+      renderCharPanel();
+    });
+    box.appendChild(div);
+  }
+}
+function closeCharPanel() {
+  document.getElementById('charPanel').classList.add('hidden');
+  showMenu();
+}
+document.getElementById('charBtn').addEventListener('click', () => {
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('charPanel').classList.remove('hidden');
+  renderCharPanel();
+});
+document.getElementById('charBack').addEventListener('click', closeCharPanel);
+document.getElementById('charClose').addEventListener('click', closeCharPanel);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 document.getElementById('audioBtn').addEventListener('click', () => {
   // 音量三档循环：🔊全开 → 🔉半音 → 🔇静音（点击也算用户手势，顺手 init）
