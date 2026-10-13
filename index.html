@@ -102,7 +102,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.29.2</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.30</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -223,7 +223,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.29.2');
+LOG.info('游戏脚本加载完成 v0.30');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -439,6 +439,10 @@ const WEAPON_DEFS = {
   nova:     { name:'寒冰新星', icon:'❄', desc:'周期冰爆减速冻结' },
   blackhole:{ name:'重力黑洞', icon:'🕳', desc:'黑洞牵引聚怪轰炸' },
   wither:   { name:'死亡凋零', icon:'🥀', desc:'处决残血敌人' },
+  chain:    { name:'连锁闪电', icon:'⚡', desc:'电弧弹跳多个敌人' },
+  axe:      { name:'回旋战斧', icon:'🪓', desc:'飞斧去回两段斩' },
+  thorn:    { name:'荆棘光环', icon:'🛡', desc:'反伤+贴身荆棘灼烧' },
+  mine:     { name:'噬魂地雷', icon:'🎯', desc:'身后埋雷炸怪群' },
 };
 
 // 被动配置表（8项，兼做进化材料）
@@ -496,6 +500,10 @@ const EVOLUTIONS = [
   { weapon:'nova',     passive:'cdr',       name:'绝对零度', icon:'🧊', desc:'必冻结并破冰溅射' },
   { weapon:'blackhole',passive:'area',      name:'事件视界', icon:'🌀', desc:'引力大增爆炸更强' },
   { weapon:'wither',   passive:'dmg',       name:'灵魂收割', icon:'⚰', desc:'处决引发连锁爆炸' },
+  { weapon:'chain',    passive:'cdr',       name:'雷霆风暴', icon:'🌩', desc:'弹跳翻倍并麻痹敌人' },
+  { weapon:'axe',      passive:'atkSpeed',  name:'血怒飞斧', icon:'🪓', desc:'飞斧+2且伤害大增' },
+  { weapon:'thorn',    passive:'hp',        name:'荆棘领域', icon:'🌵', desc:'反伤翻倍范围扩大' },
+  { weapon:'mine',     passive:'area',      name:'连环雷区', icon:'💣', desc:'双倍埋雷且连锁爆炸' },
 ];
 
 // ============================== 游戏状态 ==============================
@@ -534,6 +542,7 @@ let minions = [], zaps = [], fireZones = []; // 召唤小骷髅 / 闪电链特�
 let ghosts = []; // 死亡消散残影
 let meteors = []; // 陨石术：高空坠落弹体
 let blackholes = []; // 重力黑洞：牵引聚怪区域
+let mines = []; // 噬魂地雷：埋雷爆炸区
 let turrets = []; // 幽灵弓手（召唤炮台）
 
 // ============================== 存档（localStorage） ==============================
@@ -1630,6 +1639,75 @@ function updateWeapons(dt) {
       }
     }
 
+    // ---- 连锁闪电：电弧弹跳（进化：雷霆风暴 弹跳翻倍+麻痹）----
+    if (id === 'chain' && w.cd <= 0) {
+      w.cd = Math.max(1.1, 2.3 - lv * 0.12) * player.cdMult / player.atkSpeedMult;
+      let jumps = 3 + Math.floor(lv / 2) + (w.evolved ? 3 + Math.floor(lv / 2) : 0);
+      const chainHit = new Set();
+      let from = { x: player.x, y: player.y - 12 };
+      let target = nearestEnemy();
+      while (target && jumps-- > 0) {
+        chainHit.add(target);
+        zaps.push({ x1: from.x, y1: from.y, x2: target.x, y2: target.y - 10, life: 0.22 });
+        damageEnemy(target, weaponDmg(6, lv) * (w.evolved ? 1.3 : 1), 'chain');
+        if (w.evolved) target.slowT = 1.1; // 雷霆风暴：麻痹减速
+        from = { x: target.x, y: target.y - 10 };
+        let next = null, nd = 240 * 240;
+        for (const e of nearEnemies(from.x, from.y, 240)) {
+          if (e.dead || chainHit.has(e)) continue;
+          const d2v = (e.x - from.x) ** 2 + (e.y - from.y) ** 2;
+          if (d2v < nd) { nd = d2v; next = e; }
+        }
+        target = next;
+      }
+      AudioSys.play('shoot');
+    }
+
+    // ---- 回旋战斧：去回两段斩（进化：血怒飞斧 +2斧且伤害大增）----
+    if (id === 'axe' && w.cd <= 0) {
+      w.cd = Math.max(0.8, 1.5 - lv * 0.08) * player.cdMult / player.atkSpeedMult;
+      const n = 1 + Math.floor(lv / 3) + (w.evolved ? 2 : 0);
+      const target = nearestEnemy();
+      const base = target ? Math.atan2(target.y - player.y, target.x - player.x) : (player.facing > 0 ? 0 : Math.PI);
+      for (let i = 0; i < n; i++) {
+        const a = base + (i - (n - 1) / 2) * 0.35;
+        bullets.push({
+          x: player.x, y: player.y - 12,
+          vx: Math.cos(a) * 430 * player.projSpeedMult, vy: Math.sin(a) * 430 * player.projSpeedMult,
+          dmg: weaponDmg(7.5, lv) * (w.evolved ? 1.3 : 1), r: 11, life: 1.5,
+          pierce: 99, type: 'axe', phase: 1, spin: 0,
+        });
+      }
+      AudioSys.play('shoot');
+    }
+
+    // ---- 荆棘光环：贴身灼烧（反伤在 damagePlayer，进化：荆棘领域）----
+    if (id === 'thorn') {
+      w.tick = (w.tick || 0) - dt;
+      if (w.tick <= 0) {
+        w.tick = 0.5;
+        const rad = (72 + lv * 6) * player.areaMult * (w.evolved ? 1.4 : 1);
+        for (const e of nearEnemies(player.x, player.y, rad + 50)) {
+          if (!e.dead && dist2(e, player) < (rad + e.r) ** 2) damageEnemy(e, weaponDmg(3, lv), 'thorn');
+        }
+      }
+    }
+
+    // ---- 噬魂地雷：身周埋雷（进化：连环雷区 双倍+连锁）----
+    if (id === 'mine' && w.cd <= 0) {
+      w.cd = Math.max(1.2, 2.4 - lv * 0.15) * player.cdMult / player.atkSpeedMult;
+      const n = w.evolved ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        mines.push({
+          x: player.x + rand(-35, 35), y: player.y + rand(-35, 35),
+          r: (85 + lv * 7) * player.areaMult * (w.evolved ? 1.25 : 1),
+          dmg: weaponDmg(10, lv) * (w.evolved ? 1.35 : 1),
+          life: 8, arm: 0.35, chain: w.evolved,
+        });
+        if (mines.length > 12) mines.shift(); // 上限防堆积
+      }
+    }
+
     // ---- 噬魂血镰：环绕旋转（进化：亡者血镰 吸血+大范围）----
     if (id === 'scythe') {
       let n = 1 + Math.floor(lv / 2) + (w.evolved ? 2 : 0);
@@ -1939,6 +2017,31 @@ function updateSummons(dt) {
       blackholes.splice(i, 1);
     }
   }
+  // 噬魂地雷：近敌引爆/到时自爆（连环雷区连锁引爆邻雷）
+  for (let i = mines.length - 1; i >= 0; i--) {
+    const m = mines[i];
+    m.life -= dt; m.arm -= dt;
+    let boom = m.life <= 0;
+    if (m.arm <= 0 && !boom) {
+      for (const e of nearEnemies(m.x, m.y, 90)) {
+        if (!e.dead && dist2(e, m) < (42 + e.r) ** 2) { boom = true; break; }
+      }
+    }
+    if (boom) {
+      addParticles(m.x, m.y, '#ff9d47', 12, 240);
+      addParticles(m.x, m.y, '#ffd77a', 6, 160);
+      AudioSys.play('bomb');
+      for (const e of nearEnemies(m.x, m.y, m.r + 50)) {
+        if (!e.dead && dist2(e, m) < (m.r + e.r) ** 2) damageEnemy(e, m.dmg, 'mine');
+      }
+      if (m.chain) { // 连环雷区：引爆邻近雷
+        for (const m2 of mines) {
+          if (m2 !== m && m2.arm <= 0 && dist2(m2, m) < 140 * 140) m2.life = Math.min(m2.life, 0.05);
+        }
+      }
+      mines.splice(i, 1);
+    }
+  }
   // 小骷髅：转向插值追踪最近敌人，接触伤害，寿命耗尽消散
   for (let i = minions.length - 1; i >= 0; i--) {
     const m = minions[i];
@@ -2110,10 +2213,17 @@ function killEnemy(e) {
   }
 }
 
-function damagePlayer(dmg) {
+function damagePlayer(dmg, attacker) {
   if (player.iframe > 0 || game.state !== 'playing') return;
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
+  // 荆棘光环反伤：攻击者挨刺（进化：荆棘领域翻倍）
+  const thornW = player.weapons.thorn;
+  if (attacker && !attacker.dead && thornW && (attacker.hitT.thorn || 0) <= 0) {
+    attacker.hitT.thorn = 0.5;
+    damageEnemy(attacker, weaponDmg(4, thornW.level) * (thornW.evolved ? 2 : 1), 'thorn');
+    addParticles(attacker.x, attacker.y - 10, '#7dff8a', 4, 120);
+  }
   AudioSys.play('hurt');
   vibrate(30);
   shake(9, 0.3);
@@ -2445,7 +2555,7 @@ function updateEnemies(dt) {
     // 接触伤害（玩家有无敌帧）
     const er = e.r + player.r;
     if (d < er) {
-      damagePlayer(e.dmg);
+      damagePlayer(e.dmg, e); // 带攻击者引用：荆棘反伤用
       // 轻推挤开，防止怪贴脸糊死
       e.x -= dx / d * 12; e.y -= dy / d * 12;
     }
@@ -2491,7 +2601,7 @@ function startGame() {
   game.nextBloodmoon = 180; game.bloodT = 0; game.bloodmoonCount = 0; game.mbStage = 0; joyReset();
   AudioSys.init(); AudioSys.startBgm(); // 用户手势内初始化音频（浏览器自动播放策略）
   enemies = []; bullets = []; eBullets = []; gems = []; drops = []; particles = []; dmgTexts = [];
-  minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = [];
+  minions = []; zaps = []; fireZones = []; ghosts = []; meteors = []; turrets = []; blackholes = []; mines = [];
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
   giveWeapon((CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter).weapon); // 初始武器随角色
@@ -2750,6 +2860,16 @@ function render() {
     ctx.fillStyle = 'rgba(10,2,20,0.8)'; // 黑洞核心
     ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill();
   }
+  // 噬魂地雷（地面小圆雷+红灯呼吸）
+  for (const m of mines) {
+    const x = wx(m.x), y = wy(m.y);
+    ctx.fillStyle = 'rgba(30,20,40,0.9)';
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(190,130,255,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+    const blink2 = 0.5 + 0.5 * Math.sin(performance.now() / 160);
+    ctx.fillStyle = `rgba(255,80,80,${0.4 + 0.5 * blink2})`;
+    ctx.beginPath(); ctx.arc(x, y - 2, 2.4, 0, Math.PI * 2); ctx.fill();
+  }
 
   // ---- 神圣闪电链（范围特效：实体下方+降透明）----
   for (const z of zaps) {
@@ -2864,6 +2984,14 @@ function render() {
       roundRect(-10, -3, 20, 6, 3); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillRect(6, -2, 6, 4);
       ctx.restore();
+    } else if (b.type === 'axe') {
+      // 回旋战斧：旋转斧头
+      ctx.save(); ctx.translate(x, y); ctx.rotate(b.spin || 0);
+      ctx.fillStyle = '#8a5a2e'; roundRect(-2, -4, 4, 16, 2); ctx.fill(); // 柄
+      ctx.fillStyle = '#c9c2b0';
+      ctx.beginPath(); ctx.moveTo(2, -8); ctx.lineTo(13, -3); ctx.lineTo(13, 5); ctx.lineTo(2, 8); ctx.closePath(); ctx.fill(); // 斧刃
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(3, -5, 2, 8);
+      ctx.restore();
     } else if (b.type === 'sword') {
       // 裁决飞剑：金色长剑形弹体+圣光晕
       const a = Math.atan2(b.vy, b.vx);
@@ -2964,6 +3092,18 @@ function render() {
         ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(x - 3, y - 4, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // 荆棘光环（贴身刺环）
+    if (id === 'thorn') {
+      const rad = (72 + w.level * 6) * player.areaMult * (w.evolved ? 1.4 : 1);
+      ctx.strokeStyle = w.evolved ? 'rgba(125,255,138,0.5)' : 'rgba(90,180,90,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(wx(player.x), wy(player.y), rad, rad * 0.62, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let k = 0; k < 10; k++) {
+        const a = performance.now() / 900 + k * Math.PI * 2 / 10;
+        ctx.fillStyle = w.evolved ? 'rgba(125,255,138,0.8)' : 'rgba(90,180,90,0.6)';
+        ctx.beginPath(); ctx.arc(wx(player.x + Math.cos(a) * rad), wy(player.y + Math.sin(a) * rad * 0.62), 2.6, 0, Math.PI * 2); ctx.fill();
       }
     }
     // 死亡凋零光环
@@ -3186,7 +3326,24 @@ function loop(now) {
     // 子弹飞行
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
+      if (b.type === 'axe') { // 回旋战斧：去程到时掉头回手，两段判定
+        b.spin = (b.spin || 0) + dt * 14;
+        if (b.phase === 1 && b.life <= 0.55) {
+          b.phase = 2;
+          if (b.hitSet) b.hitSet.clear(); // 回程重新判定
+          const aa = Math.atan2(player.y - b.y, player.x - b.x);
+          b.vx = Math.cos(aa) * 430 * player.projSpeedMult; b.vy = Math.sin(aa) * 430 * player.projSpeedMult;
+          b.life = 1.4;
+        }
+        if (b.phase === 2) {
+          const aa = Math.atan2(player.y - b.y, player.x - b.x);
+          b.vx += (Math.cos(aa) * 470 - b.vx) * Math.min(1, dt * 6);
+          b.vy += (Math.sin(aa) * 470 - b.vy) * Math.min(1, dt * 6);
+        }
+      }
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      if (b.type === 'axe' && b.phase === 2 && dist2(b, player) < 30 * 30) { bullets.splice(i, 1); continue; } // 回手消失
+      if (b.type === 'axe' && b.life <= 0) { bullets.splice(i, 1); continue; }
       let hit = false;
       if (!b.hitSet) b.hitSet = new Set(); // 穿透去重：记录已命中的怪，防重复判定伤害
       for (const e of nearEnemies(b.x, b.y, 90)) { // 网格近邻：只查弹体周围
