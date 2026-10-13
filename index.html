@@ -102,7 +102,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.33</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.34</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -246,7 +246,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.33');
+LOG.info('游戏脚本加载完成 v0.34');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -501,6 +501,18 @@ const CHAR_DEFS = {
     desc: '以血为刃的猩红术士', bonus: '伤害 +15% · 攻速 +15% · 生命 -25',
     dmg: 1.15, atkSpeed: 1.15, speed: 0.95, hpBonus: -25,
     colors: { cape: '#4a1220', body: '#3a0f1a', plate: '#5c1622', hood: '#2a0a12', legs: '#2a0a12', boots: '#5c1622', trim: '#c9506a', inner: 'rgba(201,80,106,0.5)', eye: 'rgba(255,125,146,' },
+  },
+  assassin: {
+    name: '刺客', icon: '🗡', weapon: 'sword',
+    desc: '双匕索命的暗影之刃', bonus: '暴击 +15% · 暴伤 ×2.1 · 攻速 +12% · 移速 +10%',
+    dmg: 0.95, atkSpeed: 1.12, speed: 1.10, hpBonus: 0, critBonus: 0.15, critMult: 2.1,
+    colors: { cape: '#1c2430', body: '#202a38', plate: '#2e3c50', hood: '#141c28', legs: '#182030', boots: '#2a3648', trim: '#c9d2e8', inner: 'rgba(180,200,230,0.5)', eye: 'rgba(255,90,90,' },
+  },
+  summoner: {
+    name: '召唤师', icon: '🧙‍♂️', weapon: 'skeleton',
+    desc: '统领亡灵军团的骨冠术士', bonus: '伤害 +8% · 攻速 +10% · 拾取 +30% · 生命 -10',
+    dmg: 1.08, atkSpeed: 1.10, speed: 1, hpBonus: -10, pickupMult: 1.3,
+    colors: { cape: '#24301c', body: '#2e3824', plate: '#3c4a2e', hood: '#1a2414', legs: '#222c1a', boots: '#38422c', trim: '#8fae4e', inner: 'rgba(125,255,138,0.4)', eye: 'rgba(125,255,138,' },
   },
 };
 
@@ -893,6 +905,54 @@ function drawHero(x, y, s, facing) {
     ctx.beginPath(); ctx.ellipse(7 * s, -28.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = C.trim; ctx.lineWidth = 2 * s; // 帽带
     ctx.beginPath(); ctx.moveTo(-7 * s, -34.5 * s); ctx.quadraticCurveTo(1 * s, -31 * s, 9 * s, -34.5 * s); ctx.stroke();
+  } else if (CID === 'assassin') {
+    // 刺客：兜帽 + 面罩遮脸 + 冷银细目
+    ctx.fillStyle = C.hood;
+    ctx.beginPath();
+    ctx.moveTo(-11 * s, -26 * s);
+    ctx.quadraticCurveTo(-11 * s, -41 * s, 1 * s, -41 * s);
+    ctx.quadraticCurveTo(12 * s, -41 * s, 11.5 * s, -27 * s);
+    ctx.quadraticCurveTo(8 * s, -21 * s, 0, -21 * s);
+    ctx.quadraticCurveTo(-8 * s, -21 * s, -11 * s, -26 * s);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+    ctx.fillStyle = '#0d0818'; // 脸部阴影
+    ctx.beginPath(); ctx.ellipse(1.5 * s, -29 * s, 8.5 * s, 7.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.plate; // 面罩（下半脸）
+    ctx.beginPath(); ctx.ellipse(1.5 * s, -25.5 * s, 8 * s, 4.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+    const eyeGlow = ctx.createRadialGradient(3 * s, -31 * s, 0, 3 * s, -31 * s, 5 * s);
+    eyeGlow.addColorStop(0, C.eye + '0.5)');
+    eyeGlow.addColorStop(1, C.eye + '0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.beginPath(); ctx.arc(3 * s, -31 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff9db0'; // 冷银细目
+    ctx.beginPath(); ctx.ellipse(1.2 * s, -31 * s, 1.9 * s, 1.2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(7 * s, -31 * s, 1.9 * s, 1.2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (CID === 'summoner') {
+    // 召唤师：兜帽 + 额前骨冠 + 绿瞳
+    ctx.fillStyle = C.hood;
+    ctx.beginPath();
+    ctx.moveTo(-11 * s, -26 * s);
+    ctx.quadraticCurveTo(-11 * s, -41 * s, 1 * s, -41 * s);
+    ctx.quadraticCurveTo(12 * s, -41 * s, 11.5 * s, -27 * s);
+    ctx.quadraticCurveTo(8 * s, -21 * s, 0, -21 * s);
+    ctx.quadraticCurveTo(-8 * s, -21 * s, -11 * s, -26 * s);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 2 * s; ctx.stroke();
+    ctx.fillStyle = C.trim; // 额前骨冠（一排小骨齿）
+    for (let k = -2; k <= 2; k++) {
+      ctx.beginPath(); ctx.arc(1 * s + k * 4.2 * s, -36.5 * s + Math.abs(k) * 1.2, 1.9 * s, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#0d0818'; // 帽内阴影脸
+    ctx.beginPath(); ctx.ellipse(1.5 * s, -29 * s, 8.5 * s, 7.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+    const eyeGlow = ctx.createRadialGradient(3 * s, -29.5 * s, 0, 3 * s, -29.5 * s, 5.5 * s);
+    eyeGlow.addColorStop(0, C.eye + '0.5)');
+    eyeGlow.addColorStop(1, C.eye + '0)');
+    ctx.fillStyle = eyeGlow;
+    ctx.beginPath(); ctx.arc(3 * s, -29.5 * s, 5.5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7dff8a'; // 绿瞳
+    ctx.beginPath(); ctx.ellipse(1.2 * s, -29.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(7 * s, -29.5 * s, 1.7 * s, 2 * s * blink, 0, 0, Math.PI * 2); ctx.fill();
   } else {
   // 死灵猎人：连帽斗篷（阴影罩脸+帽尖后垂+帽檐红边）
   ctx.fillStyle = C.hood;
@@ -971,6 +1031,49 @@ function drawHero(x, y, s, facing) {
       ctx.globalAlpha = 0.35 * (1 - swingP);
       ctx.strokeStyle = C.trim; ctx.lineWidth = 5 * s; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.arc(0, 12 * s, 15 * s, -1.3, 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  } else if (CID === 'assassin') {
+    // 刺客：双持短匕（右手随挥 + 左手反握）
+    ctx.save();
+    ctx.translate(8 * s, -17 * s);
+    ctx.rotate(armA);
+    ctx.fillStyle = C.body; roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
+    ctx.fillStyle = '#120b22'; ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c9d2e8'; // 银匕刃
+    roundRect(-1.6 * s, 11 * s, 3.2 * s, 11 * s, 1.4 * s); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(-0.5 * s, 12 * s, 1 * s, 9 * s);
+    if (swingP >= 0) {
+      ctx.globalAlpha = 0.4 * (1 - swingP);
+      ctx.strokeStyle = '#c9d2e8'; ctx.lineWidth = 4 * s; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 10 * s, 13 * s, -1.3, 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    ctx.save(); // 左手反握匕
+    ctx.translate(-10 * s, -13 * s);
+    ctx.rotate(2.6);
+    ctx.fillStyle = C.body; roundRect(-2 * s, -2 * s, 4 * s, 9 * s, 2 * s); ctx.fill();
+    ctx.fillStyle = '#c9d2e8'; roundRect(-1.4 * s, 7 * s, 2.8 * s, 9 * s, 1.2 * s); ctx.fill();
+    ctx.restore();
+  } else if (CID === 'summoner') {
+    // 召唤师：骷髅骨杖（杖头骷髅+绿火眼窝）
+    ctx.save();
+    ctx.translate(8 * s, -17 * s);
+    ctx.rotate(armA * 0.7);
+    ctx.fillStyle = C.body; roundRect(-2.4 * s, -2 * s, 4.8 * s, 11 * s, 2.4 * s); ctx.fill();
+    ctx.fillStyle = '#120b22'; ctx.beginPath(); ctx.arc(0, 10 * s, 2.7 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c9c2b0'; roundRect(-1.4 * s, -12 * s, 2.8 * s, 26 * s, 1.4 * s); ctx.fill(); // 骨杖杆
+    ctx.fillStyle = '#e8e2d4'; // 杖头骷髅
+    ctx.beginPath(); ctx.arc(0, -15 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7dff8a'; // 绿火眼窝
+    ctx.beginPath(); ctx.arc(-1.8 * s, -16 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(1.8 * s, -16 * s, 1.2 * s, 0, Math.PI * 2); ctx.fill();
+    if (swingP >= 0) {
+      ctx.globalAlpha = 0.35 * (1 - swingP);
+      ctx.strokeStyle = '#7dff8a'; ctx.lineWidth = 4 * s; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 10 * s, 13 * s, -1.3, 0.5); ctx.stroke();
       ctx.globalAlpha = 1;
     }
     ctx.restore();
@@ -1398,11 +1501,13 @@ function recomputeStats() {
   const dm = dailyMod(); // 每日挑战规则修正
   player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov) * ch.dmg * ((dm === 'glass') ? 1.5 : 1);
   player.atkSpeedMult = (1 + 0.10 * (p.atkSpeed || 0)) * (1 + 0.02 * ov) * ch.atkSpeed;
+  player.critChance = 0.22 + (ch.critBonus || 0); // 暴击率（刺客加成）
+  player.critMult = ch.critMult || 1.8;           // 暴击倍率
   player.areaMult = (1 + 0.12 * (p.area || 0)) * (1 + 0.02 * ov);
   player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0));
   player.projSpeedMult = 1 + 0.12 * (p.projSpeed || 0);
   player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0)) * ch.speed * ((dm === 'swift') ? 1.3 : 1);
-  player.pickup = 110 * (1 + 0.30 * (p.pickup || 0)) * (1 + 0.10 * (m.pickup || 0));
+  player.pickup = 110 * (1 + 0.30 * (p.pickup || 0)) * (1 + 0.10 * (m.pickup || 0)) * (ch.pickupMult || 1);
   const newMax = Math.round((CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0) + ch.hpBonus) * ((dm === 'glass') ? 0.5 : 1));
   if (newMax > player.maxHp) player.hp += newMax - player.maxHp; // 加上限时补差值
   player.maxHp = newMax;
@@ -2162,8 +2267,8 @@ function updateSummons(dt) {
 function damageEnemy(e, dmg, src) {
   if (e.dead) return;
   // 暴击：12% 概率 1.7 倍，金色大字跳脸
-  const crit = Math.random() < 0.22; // 暴击率 22%（老大反馈12%太低）
-  const finalDmg = crit ? dmg * 1.8 : dmg;
+  const crit = Math.random() < (player.critChance || 0.22); // 暴击率（角色/刺客加成）
+  const finalDmg = crit ? dmg * (player.critMult || 1.8) : dmg;
   e.hp -= finalDmg; e.flash = 0.12;
   if (Math.random() < 0.5) addParticles(e.x, e.y - e.r, '#fff', 2, 90); // 命中火花（概率触发省性能）
   AudioSys.play('hit');
@@ -3595,7 +3700,7 @@ function renderStatPanel() {
     ['👟 移速', Math.round(player.speed)],
     ['❤ 生命', Math.round(player.maxHp)],
     ['🧲 拾取', Math.round(player.pickup)],
-    ['💥 暴击', '22%·×1.8'],
+    ['💥 暴击', Math.round((player.critChance || 0.22) * 100) + '%·×' + (player.critMult || 1.8)],
     ['🩸 汲取', (0.5 * (player.passives.lifesteal || 0)).toFixed(1) + '%伤'],
     ['😈 嗜血', (0.3 * (player.passives.bloodthirst || 0)).toFixed(1) + '/杀'],
     ['🌟 超限', 'Lv' + (game.overflowN || 0)],
