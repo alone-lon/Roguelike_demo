@@ -102,12 +102,13 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.32</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.33</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
   <button class="btn sub" id="diffBtn">难度：普通</button>
+  <button class="btn sub" id="dailyBtn">📅 每 日 挑 战</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
@@ -174,6 +175,17 @@
   <button class="btn sub" id="charBack">返 回</button>
 </div>
 
+<!-- 每日挑战面板 -->
+<div id="dailyPanel" class="overlay hidden">
+  <button id="dailyClose" title="关闭">✕</button>
+  <div class="title" style="font-size:clamp(22px,5vw,40px)">📅 每 日 挑 战</div>
+  <div class="subtitle" id="dailyInfo"></div>
+  <div>
+    <button class="btn green" id="dailyStart">开 始 挑 战</button>
+  </div>
+  <button class="btn sub" id="dailyBack">返 回</button>
+</div>
+
 <!-- 成就面板 -->
 <div id="achPanel" class="overlay hidden">
   <button id="achClose" title="关闭">✕</button>
@@ -186,7 +198,7 @@
 <!-- 升级商店（局外永久属性，下局生效） -->
 <div id="shop" class="overlay hidden">
   <button id="shopClose" title="关闭">✕</button>
-  <style>#charClose, #achClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
+  <style>#charClose, #achClose, #dailyClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
   <div class="title" style="font-size:clamp(22px,5vw,40px)">升 级 商 店</div>
   <div class="subtitle" id="shopCoins">金币：0　（属性下局生效）</div>
   <div class="cards" id="shopItems"></div>
@@ -234,7 +246,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.32');
+LOG.info('游戏脚本加载完成 v0.33');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1383,14 +1395,15 @@ function recomputeStats() {
   const p = player.passives, m = save.meta; // 局内被动 + 局外永久属性双层叠加
   const ov = game.overflowN || 0; // 超限强化层数：全满后无限成长（+4%伤/+2%速/+2%围）
   const ch = CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter; // 角色专属加成
-  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov) * ch.dmg;
+  const dm = dailyMod(); // 每日挑战规则修正
+  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov) * ch.dmg * ((dm === 'glass') ? 1.5 : 1);
   player.atkSpeedMult = (1 + 0.10 * (p.atkSpeed || 0)) * (1 + 0.02 * ov) * ch.atkSpeed;
   player.areaMult = (1 + 0.12 * (p.area || 0)) * (1 + 0.02 * ov);
   player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0));
   player.projSpeedMult = 1 + 0.12 * (p.projSpeed || 0);
-  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0)) * ch.speed;
+  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0)) * ch.speed * ((dm === 'swift') ? 1.3 : 1);
   player.pickup = 110 * (1 + 0.30 * (p.pickup || 0)) * (1 + 0.10 * (m.pickup || 0));
-  const newMax = CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0) + ch.hpBonus;
+  const newMax = Math.round((CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0) + ch.hpBonus) * ((dm === 'glass') ? 0.5 : 1));
   if (newMax > player.maxHp) player.hp += newMax - player.maxHp; // 加上限时补差值
   player.maxHp = newMax;
   player.hp = Math.min(player.hp, player.maxHp); // 血巫师负加成防溢出
@@ -1427,7 +1440,8 @@ const ENEMY_TYPES = {
 // 经验价值随时间通胀：与怪血成长同节奏（每90秒+1倍），怪变强经验同步涨，后期升级不掉队
 function xpMult() {
   const hell = (save.settings.difficulty || 0) === 1 ? 1.3 : 1; // 地狱难度：经验×1.3 风险回报
-  return (1 + game.time / 90) * hell;
+  const horde = dailyMod() === 'horde' ? 1.5 : 1; // 每日挑战：怪海无双经验+50%
+  return (1 + game.time / 90) * hell * horde;
 }
 
 // 怪物阵容随时间换血：每阶段解锁更强新怪，后期越来越强
@@ -1466,7 +1480,7 @@ function spawnEnemy(type, x, y, noAffix) {
   enemies.push({
     type, x, y, r: d.r * (af === 'bulky' ? 1.25 : 1), hp: d.hp * hm * (af === 'bulky' ? 2.5 : 1),
     maxHp: d.hp * hm * (af === 'bulky' ? 2.5 : 1),
-    speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08) * (af === 'swift' ? 1.5 : 1),
+    speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08) * (af === 'swift' ? 1.5 : 1) * (dailyMod() === 'swift' ? 1.2 : 1),
     dmg: d.dmg * dmgMult() * (af === 'bulky' ? 1.4 : 1),
     xp: Math.round(d.xp * (af === 'bulky' ? 2 : af === 'summoner' ? 1.8 : af === 'split' ? 1.5 : af === 'swift' ? 1.3 : 1)),
     scale: d.scale * (af === 'bulky' ? 1.2 : 1), body: d.body, head: d.head, horns: d.horns, miniBoss: d.miniBoss,
@@ -1486,7 +1500,7 @@ function updateSpawner(dt) {
   const t = game.time;
   const step = 1 + Math.floor(t / 180) * 0.25;            // 阶梯：每3分钟刷怪+25%
   const rate = (1.4 + t * 0.055) * step;                   // 线性增长的每秒刷怪量
-  spawnBudget += rate * dt;
+  spawnBudget += rate * (dailyMod() === 'horde' ? 1.5 : 1) * dt; // 每日挑战：怪海无双刷怪+50%
   while (spawnBudget >= 1 && enemies.length < [140, 190, 230][qualityLv]) { // 上限随画质档位
     spawnBudget -= 1;
     // 怪物构成随时间解锁
@@ -1579,7 +1593,7 @@ function updateWeapons(dt) {
     if (id === 'orbit') {
       const n = 3 + Math.floor(lv / 3) + (w.evolved ? 2 : 0);
       const orbitR = (92 + lv * 4) * player.areaMult;
-      const dmg = weaponDmg(2.6, lv);
+      const dmg = weaponDmg(2.6, lv) * (dailyMod() === 'orb' ? 1.5 : 1); // 每日：法球狂欢
       for (let i = 0; i < n; i++) {
         const a = w.t * 1.9 + i * Math.PI * 2 / n;
         const ox = player.x + Math.cos(a) * orbitR, oy = player.y + Math.sin(a) * orbitR * 0.8;
@@ -1708,7 +1722,7 @@ function updateWeapons(dt) {
         w.tick = 0.5;
         const rad = (72 + lv * 6) * player.areaMult * (w.evolved ? 1.4 : 1);
         for (const e of nearEnemies(player.x, player.y, rad + 50)) {
-          if (!e.dead && dist2(e, player) < (rad + e.r) ** 2) damageEnemy(e, weaponDmg(3, lv), 'thorn');
+          if (!e.dead && dist2(e, player) < (rad + e.r) ** 2) damageEnemy(e, weaponDmg(3, lv) * (dailyMod() === 'thorn_only' ? 1.5 : 1), 'thorn'); // 每日：荆棘之躯
         }
       }
     }
@@ -2279,7 +2293,12 @@ function generateOptions() {
   }
   // 新武器（全部武器都可进池）
   if (Object.keys(player.weapons).length < Object.keys(WEAPON_DEFS).length) {
-    for (const id in WEAPON_DEFS) if (!player.weapons[id]) others.push({ type: 'newWeapon', id, tag: '新武器' });
+    const summonSet = ['skeleton', 'wolf', 'ghost', 'mine'];
+    for (const id in WEAPON_DEFS) {
+      if (player.weapons[id]) continue;
+      if (dailyMod() === 'summon_only' && !summonSet.includes(id)) continue; // 每日：只许召唤系
+      others.push({ type: 'newWeapon', id, tag: '新武器' });
+    }
   }
   // 武器升级
   for (const id in player.weapons) {
@@ -2628,6 +2647,12 @@ function startGame() {
   player.x = 0; player.y = 0; player.hp = CONFIG.playerHp; player.maxHp = CONFIG.playerHp;
   player.weapons = {}; player.passives = {};
   giveWeapon((CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter).weapon); // 初始武器随角色
+  if (game.dailyMode) { // 每日挑战开局规则
+    const r = dailyMod();
+    if (r === 'summon_only') { player.weapons = {}; giveWeapon('wolf'); }
+    else if (r === 'orb') { player.weapons = {}; giveWeapon('orbit'); player.weapons.orbit.level = 3; }
+    else if (r === 'thorn_only') { player.weapons = {}; giveWeapon('thorn'); player.weapons.thorn.level = 2; }
+  }
   recomputeStats();
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('settle').classList.add('hidden');
@@ -2642,12 +2667,23 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
   save.records.kills = Math.max(save.records.kills, game.kills);
   save.records.damage = Math.max(save.records.damage, Math.floor(game.damage));
   checkAchievements('end'); // 结算全量成就检查
+  // 每日挑战：撑过15分钟或通关发奖励（每天一次）
+  if (game.dailyMode && (game.time >= 900 || victoryFlag)) {
+    const today = new Date().toDateString();
+    if (save.dailyDone !== today) {
+      save.dailyDone = today;
+      const rw = DAILY_RULES[getDailyRule()].reward;
+      game.coins += rw;
+      LOG.info('每日挑战达成：+' + rw + '金');
+    }
+  }
   writeSave();
   game.state = 'settle';
   document.getElementById('settleTitle').textContent =
     quitReason === 'save' ? '💾 已保存 · 本局结算' :
     quitReason === 'quit' ? '主动退出 · 本局结算' :
     endlessQuit ? '无尽结算' : (victoryFlag ? '通 关 ！' : '游 戏 结 束');
+  if (game.dailyMode) document.getElementById('settleTitle').textContent += ' · 📅每日挑战';
   // —— 结算构建展示：武器/被动一览 + 伤害排行（哪把武器最能打一目了然）——
   const ws = Object.entries(player.weapons).map(([id, w]) =>
     `${WEAPON_DEFS[id] ? WEAPON_DEFS[id].icon : '⚔'}${WEAPON_DEFS[id] ? WEAPON_DEFS[id].name : id} Lv${w.level}${w.evolved ? '·超武' : ''}`);
@@ -2831,6 +2867,22 @@ const ACHIEVEMENTS = [
   { id: 'wealth_2000', icon: '💰', name: '家财万贯',   desc: '金币持有达到 2000',    reward: 100 },
   { id: 'char_all',    icon: '👥', name: '三杰齐聚',   desc: '三个角色各通关一次',   reward: 200 },
 ];
+
+// ============================== 每日挑战（日期定种子，六规则日轮换） ==============================
+const DAILY_RULES = {
+  summon_only: { name: '召唤狂潮', desc: '只许用召唤系武器（骷髅/狼/幽灵/地雷）', reward: 150 },
+  orb:         { name: '法球狂欢', desc: '开局暗黑法球 Lv3，法球伤害 +50%', reward: 120 },
+  glass:       { name: '玻璃大炮', desc: '生命上限减半，伤害 +50%', reward: 180 },
+  horde:       { name: '怪海无双', desc: '刷怪速度 +50%，经验 +50%', reward: 150 },
+  swift:       { name: '疾风骤雨', desc: '我方移速 +30%，敌方移速 +20%', reward: 150 },
+  thorn_only:  { name: '荆棘之躯', desc: '开局荆棘光环 Lv2，荆棘伤害 +50%', reward: 120 },
+};
+function getDailyRule() {
+  const d = new Date();
+  const keys = Object.keys(DAILY_RULES);
+  return keys[(d.getFullYear() * 372 + (d.getMonth() + 1) * 31 + d.getDate()) % keys.length]; // 日期即种子
+}
+function dailyMod() { return game.dailyMode ? getDailyRule() : null; }
 
 function unlockAchievement(id) {
   if (save.achievements[id]) return;
@@ -3486,7 +3538,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 // ============================== UI 事件 ==============================
-document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('startBtn').addEventListener('click', () => { game.dailyMode = false; startGame(); });
 document.getElementById('againBtn').addEventListener('click', () => {
   // 见好就收：回主菜单并刷新纪录显示；结算面板同按钮也用于"再来一局"
   if (game.state === 'settle') {
@@ -3658,6 +3710,30 @@ document.getElementById('achBtn').addEventListener('click', () => {
 });
 document.getElementById('achBack').addEventListener('click', closeAchPanel);
 document.getElementById('achClose').addEventListener('click', closeAchPanel);
+// —— 每日挑战 ——
+function renderDailyPanel() {
+  const r = DAILY_RULES[getDailyRule()];
+  const done = save.dailyDone === new Date().toDateString();
+  document.getElementById('dailyInfo').innerHTML =
+    `今日规则：<b style="color:#ffd77a">${r.name}</b><br>${r.desc}<br>奖励 💰${r.reward}${done ? '　（今日已达成 ✓）' : ''}`;
+  document.getElementById('dailyStart').textContent = done ? '再 战 一 次' : '开 始 挑 战';
+}
+document.getElementById('dailyBtn').addEventListener('click', () => {
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('dailyPanel').classList.remove('hidden');
+  renderDailyPanel();
+});
+document.getElementById('dailyStart').addEventListener('click', () => {
+  game.dailyMode = true;
+  document.getElementById('dailyPanel').classList.add('hidden');
+  startGame();
+});
+function closeDailyPanel() {
+  document.getElementById('dailyPanel').classList.add('hidden');
+  showMenu();
+}
+document.getElementById('dailyBack').addEventListener('click', closeDailyPanel);
+document.getElementById('dailyClose').addEventListener('click', closeDailyPanel);
 // —— 难度切换：普通/地狱（通关解锁）——
 function renderDiffBtn() {
   const btn = document.getElementById('diffBtn');
