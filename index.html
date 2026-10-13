@@ -124,7 +124,7 @@
   @keyframes kb { from { transform:scale(1.0); } to { transform:scale(1.05); } }
   #splashArtBg { position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
     transform:scale(1.18); filter:blur(30px) brightness(0.5) saturate(1.1); } /* 模糊垫底：任意比例铺满 */
-  #splashArt { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; } /* 完整图居中：零拉伸零裁切 */
+  #splashArt { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; } /* 铺满全屏（cover裁边填充，不变形）—老大指定 */
   #splashFx { position:absolute; inset:0; pointer-events:none; } /* 余烬粒子层 */
   #splashFog { position:absolute; left:-25%; top:35%; width:150%; height:38%;
     background:linear-gradient(90deg, transparent, rgba(150,120,190,0.10), transparent);
@@ -146,11 +146,18 @@
     font-size:clamp(14px,3.4vw,22px); letter-spacing:8px; text-shadow:0 2px 12px rgba(0,0,0,0.9);
     animation:pulse 1.8s ease-in-out infinite; pointer-events:none; }
   @keyframes pulse { 0%,100% { opacity:.45; } 50% { opacity:1; } }
+  /* 页面背景图层（主菜单/结算）：暗化压底不抢 UI */
+  .pageBg { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0;
+    animation:kb 26s ease-in-out infinite alternate; }
+  #menu .pageBg { opacity:0.6; }
+  #settle .pageBg { opacity:0.5; }
+  #menu > *:not(.pageBg), #settle > *:not(.pageBg) { position:relative; z-index:1; }
 </style>
 
 <div id="menu" class="overlay">
+  <img class="pageBg" src="menu-bg.jpg" alt="">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.38.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.39</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -176,6 +183,7 @@
 
 <!-- 结算（胜利/失败/无尽终止通用） -->
 <div id="settle" class="overlay hidden">
+  <img class="pageBg" src="settle-bg.jpg" alt="">
   <div class="title" id="settleTitle">结算</div>
   <div class="stats" id="settleStats"></div>
   <div>
@@ -298,7 +306,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.38.1');
+LOG.info('游戏脚本加载完成 v0.39');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
