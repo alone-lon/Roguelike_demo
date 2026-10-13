@@ -102,7 +102,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.34</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.35</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -175,6 +175,10 @@
   <button class="btn sub" id="charBack">返 回</button>
 </div>
 
+<!-- PWA 主动安装按钮（主菜单左上角） -->
+<button id="installBtn" class="hidden" title="添加到主屏幕">📲</button>
+<style>#installBtn { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); left:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:20px; cursor:pointer; }</style>
+
 <!-- 每日挑战面板 -->
 <div id="dailyPanel" class="overlay hidden">
   <button id="dailyClose" title="关闭">✕</button>
@@ -246,7 +250,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.34');
+LOG.info('游戏脚本加载完成 v0.35');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -2738,6 +2742,7 @@ function updatePlayer(dt) {
 function startGame() {
   // 重置全部状态
   game.state = 'playing'; game.time = 0; game.kills = 0; game.damage = 0;
+  document.getElementById('installBtn').classList.add('hidden'); // PWA 安装按钮战时隐藏
   game.level = 1; game.xp = 0; game.xpNeed = CONFIG.xpNeed(1);
   game.endless = false; game.bossSpawned = false; game.boss = null;
   game.shakeT = 0; game.flashT = 0;
@@ -3839,6 +3844,36 @@ function closeDailyPanel() {
 }
 document.getElementById('dailyBack').addEventListener('click', closeDailyPanel);
 document.getElementById('dailyClose').addEventListener('click', closeDailyPanel);
+// —— PWA 主动安装：拦截自动弹窗，改走角落按钮主动触发 ——
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // 阻止浏览器自动弹安装横幅，改由按钮主动触发
+  deferredPrompt = e;
+  updateInstallBtn();
+  LOG.info('PWA 可安装，安装按钮已显示');
+});
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function updateInstallBtn() {
+  const btn = document.getElementById('installBtn');
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const canShow = !isStandalone() && (deferredPrompt || isIOS) && game.state === 'menu';
+  if (canShow) btn.classList.remove('hidden');
+  else btn.classList.add('hidden');
+}
+document.getElementById('installBtn').addEventListener('click', async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt(); // 安卓/Chrome：程序化弹出系统安装确认
+    const choice = await deferredPrompt.userChoice;
+    LOG.info('PWA 安装选择：' + choice.outcome);
+    deferredPrompt = null;
+    updateInstallBtn();
+  } else {
+    // iOS Safari 不支持程序化触发，给手动指引
+    alert('【添加到主屏幕】\n\n📱 iOS Safari：点底部【分享】按钮 ↗ → 选择【添加到主屏幕】\n🤖 安卓/Chrome：浏览器菜单 ⋮ → 【添加到主屏幕/安装应用】');
+  }
+});
 // —— 难度切换：普通/地狱（通关解锁）——
 function renderDiffBtn() {
   const btn = document.getElementById('diffBtn');
@@ -3876,6 +3911,7 @@ document.getElementById('audioBtn').addEventListener('click', () => {
 function showMenu() {
   game.state = 'menu';
   renderDiffBtn();
+  updateInstallBtn();
   document.getElementById('menuRecords').innerHTML =
     `金币 <b>${game.coins}</b>　历史最佳：存活 <b>${fmtTime(save.records.time)}</b>　击杀 <b>${save.records.kills}</b>　伤害 <b>${save.records.damage.toLocaleString()}</b>`;
   document.getElementById('shop').classList.add('hidden');
