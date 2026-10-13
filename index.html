@@ -110,7 +110,7 @@
   <canvas id="splashFx"></canvas>
   <div id="splashVig"></div>
   <div id="splashTitle">
-    <div class="st-main">暗 黑 幸 存 者</div>
+    <img class="st-main-img" src="title.png" alt="暗黑幸存者">
     <div class="st-sub">R O G U E L I K E · 割 草 暗 黑 幻 想</div>
   </div>
   <div id="splashEnter">点 击 任 意 处 进 入</div>
@@ -152,12 +152,17 @@
   #menu .pageBg { opacity:0.6; }
   #settle .pageBg { opacity:0.5; }
   #menu > *:not(.pageBg), #settle > *:not(.pageBg) { position:relative; z-index:1; }
+  /* 艺术字标题（title.png 华文新魏金属浮雕） */
+  .st-main-img { height:clamp(56px,13vw,120px); width:auto; display:block; margin:0 auto;
+    animation:titleFloat 5s ease-in-out infinite; }
+  .title-img { height:clamp(44px,10vw,84px); width:auto; display:block; margin:0 auto;
+    filter:drop-shadow(0 4px 22px rgba(255,140,50,0.35)); }
 </style>
 
 <div id="menu" class="overlay">
   <img class="pageBg" src="menu-bg.jpg" alt="">
-  <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.39</b></div>
+  <img class="title-img" src="title.png" alt="暗黑幸存者">
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.39.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -306,7 +311,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.39');
+LOG.info('游戏脚本加载完成 v0.39.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
