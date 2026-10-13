@@ -1,6 +1,6 @@
 /* 暗黑幸存者 Service Worker：网络优先+缓存兜底（更新秒生效，离线仍可玩） */
 const CACHE = 'roguelike-demo-v2'; // 版本号升级即清旧缓存（v1 缓存优先策略会把旧版游戏锁死）
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './splash.jpg', './menu-bg.jpg', './settle-bg.jpg', './title.png'];
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './splash.jpg', './menu-bg.jpg', './settle-bg.jpg', './title.webp'];
 
 // 安装：预缓存核心资源
 self.addEventListener('install', (e) => {
