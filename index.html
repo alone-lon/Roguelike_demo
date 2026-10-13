@@ -102,7 +102,7 @@
 <!-- 主菜单 -->
 <div id="menu" class="overlay">
   <div class="title">暗黑幸存者</div>
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.36</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.37</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
   <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
@@ -250,7 +250,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.36');
+LOG.info('游戏脚本加载完成 v0.37');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -2482,6 +2482,7 @@ function applyOption(opt) {
 }
 
 function openLevelUp(skipFx) {
+  if (game.tutStep === 1) { showTip('⬆ 升级优先拿新武器，武器越多输出越广！'); game.tutStep = 2; } // 新手引导第二条
   game.state = 'levelup';
   joyReset(); // 界面切换重置摇杆，防止触摸状态残留
   if (!skipFx) { // 重掷/拉黑重绘时不重复撒金光音效
@@ -2675,12 +2676,14 @@ function updateEnemies(dt) {
             const n = enraged ? 16 : 14; // 环形弹幕（狂暴加量）
             for (let i = 0; i < n; i++) {
               const a = i * Math.PI * 2 / n;
-              eBullets.push({ owner: e, atk: e.lastAtk || '魔能弹幕', x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
+              e.lastAtk = '幽魂散射';
+            eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 30, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, dmg: e.dmg * 0.7, r: 9, life: 4 });
             }
           } else if (e.atkN === 1) {
             for (let k = -2; k <= 2; k++) { // 扇形5连狙杀弹
               const a = base + k * 0.22;
-              eBullets.push({ owner: e, atk: e.lastAtk || '魔能弹幕', x: e.x, y: e.y - 30, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, dmg: e.dmg * 0.85, r: 8, life: 3.2 });
+              e.lastAtk = '魔能爆弹';
+            eBullets.push({ owner: e, atk: e.lastAtk, x: e.x, y: e.y - 30, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, dmg: e.dmg * 0.85, r: 8, life: 3.2 });
             }
           } else if (e.atkN === 2) {
             for (let k = 0; k < 3; k++) spawnEnemy(Math.random() < 0.5 ? 'fast' : 'normal', e.x + rand(-90, 90), e.y + rand(-90, 90)); // 召唤爪牙
@@ -2763,6 +2766,8 @@ function updatePlayer(dt) {
 function startGame() {
   // 重置全部状态
   game.state = 'playing'; game.time = 0; game.kills = 0; game.damage = 0; game.killer = null;
+  game.tutStep = save.tutorialDone ? 3 : 0; // 新手引导进度 0走位/1拿武器/2躲弹幕/3完成
+  if (game.tutStep === 0) { showTip('🕹 走位躲怪（PC用WASD/手机拖摇杆），攻击全自动！'); game.tutStep = 1; }
   document.getElementById('installBtn').classList.add('hidden'); // PWA 安装按钮战时隐藏
   game.level = 1; game.xp = 0; game.xpNeed = CONFIG.xpNeed(1);
   game.endless = false; game.bossSpawned = false; game.boss = null;
@@ -3016,6 +3021,13 @@ function getDailyRule() {
   return keys[(d.getFullYear() * 372 + (d.getMonth() + 1) * 31 + d.getDate()) % keys.length]; // 日期即种子
 }
 function dailyMod() { return game.dailyMode ? getDailyRule() : null; }
+
+// —— 新手引导：首局三条浮层提示（存档记忆，只提示一次）——
+function showTip(text) {
+  game.bannerText = text;
+  game.bannerT = 5; // 引导提示给足阅读时间
+  LOG.info('新手引导：' + text);
+}
 
 function unlockAchievement(id) {
   if (save.achievements[id]) return;
@@ -3663,6 +3675,12 @@ function loop(now) {
   game.bloodT = Math.max(0, game.bloodT - dt);
   game.achCd = (game.achCd || 0) - dt;
   if (game.achCd <= 0) { game.achCd = 5; checkAchievements('live'); } // 局中成就巡检
+  if (game.tutStep === 2 && eBullets.length >= 1) { // 新手引导第三条：第一条敌方弹幕出现即教学
+    showTip('🔴 看到地面红圈和弹幕快躲开，别贪刀！');
+    game.tutStep = 3;
+    save.tutorialDone = true;
+    writeSave();
+  }
   game.flashT = Math.max(0, game.flashT - dt);
 
   render();
