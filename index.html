@@ -165,13 +165,10 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.43</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.44</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
-  <button class="btn sub" id="continueBtn">📂 继 续 存 档</button>
-  <button class="btn sub" id="charBtn">👤 角 色 选 择</button>
+  <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
-  <button class="btn sub" id="diffBtn">难度：普通</button>
-  <button class="btn sub" id="dailyBtn">📅 每 日 挑 战</button>
   <button class="btn sub" id="shopBtn">升 级 商 店</button>
   <div class="tip">电脑端：WASD / 方向键 移动，攻击全自动<br>移动端：左侧虚拟摇杆 移动 · 升级点卡片选择<br>撑过 15 分钟击杀 Boss 通关，也可无尽继续割<br>按 L 键可导出运行日志（报障排查用）</div>
   <div class="stats" id="menuRecords"></div>
@@ -208,8 +205,7 @@
   <div class="stats" id="statPanel"></div>
   <div>
     <button class="btn" id="resumeBtn">继 续 游 戏</button>
-    <button class="btn green" id="saveQuitBtn">💾 保 存 并 退 出</button>
-    <button class="btn sub" id="quitBtn">回 主 菜 单</button>
+    <button class="btn green" id="quitBtn">退 出（自动保存）</button>
   </div>
 </div>
 
@@ -229,6 +225,23 @@
   <div class="subtitle" id="slotTip">选择一个槽位</div>
   <div class="cards" id="slotCards"></div>
   <button class="btn sub" id="slotBack">返 回</button>
+</div>
+
+<!-- 难度选择面板（新流程第三步：普通/地狱/每日挑战） -->
+<div id="diffPanel" class="overlay hidden">
+  <div class="title" style="font-size:clamp(22px,5vw,40px)">⚔ 选 择 难 度</div>
+  <div class="subtitle">选择本局难度，进入战场</div>
+  <div class="cards" id="diffFlowCards"></div>
+  <button class="btn sub" id="diffFlowBack">返 回</button>
+</div>
+
+<!-- 排行榜面板 -->
+<div id="rankPanel" class="overlay hidden">
+  <button id="rankClose" title="关闭">✕</button>
+  <div class="title" style="font-size:clamp(22px,5vw,40px)">📊 排 行 榜</div>
+  <div class="subtitle">每次结局自动记录 · 前十上榜（本机榜）</div>
+  <div class="stats" id="rankList"></div>
+  <button class="btn sub" id="rankBack">返 回</button>
 </div>
 
 <!-- 角色选择面板 -->
@@ -267,7 +280,7 @@
 <!-- 升级商店（局外永久属性，下局生效） -->
 <div id="shop" class="overlay hidden">
   <button id="shopClose" title="关闭">✕</button>
-  <style>#charClose, #achClose, #dailyClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
+  <style>#charClose, #achClose, #dailyClose, #rankClose { position:fixed; top:12px; top:calc(12px + env(safe-area-inset-top)); right:12px; z-index:30; width:46px; height:46px; border-radius:12px; border:2px solid rgba(255,255,255,0.35); background:rgba(30,18,56,0.72); color:#fff; font-size:18px; cursor:pointer; }</style>
   <div class="title" style="font-size:clamp(22px,5vw,40px)">升 级 商 店</div>
   <div class="subtitle" id="shopCoins">金币：0　（属性下局生效）</div>
   <div class="cards" id="shopItems"></div>
@@ -315,7 +328,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.43');
+LOG.info('游戏脚本加载完成 v0.44');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -685,6 +698,7 @@ const save = loadSave();
 save.records = save.records || { time: 0, kills: 0, damage: 0 };
 save.achievements = save.achievements || {}; // 成就解锁表
 save.charWins = save.charWins || {};         // 各角色通关记录（三角色通关成就用）
+save.leaderboard = save.leaderboard || [];   // 历史排行榜（前十，每次结局自动记录）
 save.hellUnlocked = !!save.hellUnlocked;     // 地狱难度解锁（通关开启）
 save.meta = save.meta || { dmg: 0, hp: 0, moveSpeed: 0, pickup: 0, cdr: 0, xpBonus: 0 }; // 局外属性存档
 save.settings = save.settings || { muted: false, volumeLv: 2 }; // 设置项（静音/音量档记忆）
@@ -3082,6 +3096,30 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
   save.records.time = Math.max(save.records.time, Math.floor(game.time));
   save.records.kills = Math.max(save.records.kills, game.kills);
   save.records.damage = Math.max(save.records.damage, Math.floor(game.damage));
+  // —— 排行榜：每次结局（退出/死亡/通关/无尽）自动记录，前十上榜 ——
+  try {
+    const lb = save.leaderboard || [];
+    const entry = {
+      t: Math.round(game.time), kills: game.kills, dmg: Math.round(game.damage),
+      char: save.settings.charId || 'hunter', win: !!victoryFlag,
+      date: new Date().toLocaleDateString('zh-CN'),
+      score: (victoryFlag ? 1000000 : 0) + Math.round(game.time),
+    };
+    lb.push(entry);
+    lb.sort((a, b) => b.score - a.score);
+    save.leaderboard = lb.slice(0, 10);
+    LOG.info('排行榜已记录：' + fmtTime(entry.t) + ' · ' + entry.kills + '杀' + (entry.win ? ' · 通关' : ''));
+  } catch (err) { LOG.warn('排行榜记录失败：' + err.message); }
+  // —— 存档槽生命周期：主动退出自动保存；死亡/通关/无尽结局清空 ——
+  if (game.runSlot) {
+    if (quitReason === 'quit' || quitReason === 'save') {
+      saveRunToSlot(game.runSlot);
+      LOG.info('退出自动保存 → 槽位' + game.runSlot);
+    } else {
+      localStorage.removeItem(RUN_SLOT_PREFIX + game.runSlot);
+      LOG.info('结局清空槽位' + game.runSlot + (victoryFlag ? '（通关）' : '（死亡/无尽结局）'));
+    }
+  }
   checkAchievements('end'); // 结算全量成就检查
   // 每日挑战：撑过15分钟或通关发奖励（每天一次）
   if (game.dailyMode && (game.time >= 900 || victoryFlag)) {
@@ -3227,14 +3265,17 @@ function loadRunFromSlot(n) {
   recomputeStats();
   player.hp = Math.min(s.player.hp, player.maxHp);
   try { localStorage.removeItem(RUN_SLOT_PREFIX + n); } catch (e) { /* 忽略 */ } // 读取即焚
+  game.runSlot = n; // 绑定槽位：退出自动保存回同一槽
   LOG.info('读取槽位' + n + '继续冒险（存档已销毁）');
 }
 
 function openSlotPanel(mode) {
-  // mode: 'save' 保存并退出 | 'load' 读取继续
+  // mode: 'new' 开始游戏选槽 | 'save' 保存并退出 | 'load' 读取继续
   const box = document.getElementById('slotCards');
-  document.getElementById('slotTitle').textContent = mode === 'save' ? '💾 保 存 进 度' : '📂 读 取 存 档';
-  document.getElementById('slotTip').textContent = mode === 'save'
+  document.getElementById('slotTitle').textContent = mode === 'new' ? '📂 选 择 存 档' : (mode === 'save' ? '💾 保 存 进 度' : '📂 读 取 存 档');
+  document.getElementById('slotTip').textContent = mode === 'new'
+    ? '空位=新开局 · 有档=继续该进度（退出自动保存，死亡存档消失）'
+    : mode === 'save'
     ? '保存本局进度并退出（存档读取一次后自动销毁；死亡时无法保存）'
     : '选择要继续的冒险（读取后该存档自动销毁）';
   box.innerHTML = '';
@@ -3245,12 +3286,19 @@ function openSlotPanel(mode) {
     if (s) {
       div.innerHTML = `<div class="icon">💾</div><div class="name">槽位 ${n}</div>` +
         `<div class="desc">Lv ${s.game.level}　${fmtTime(s.game.time)}<br>${s.date}</div>` +
-        `<div class="tag">${mode === 'save' ? '点击覆盖保存' : '点击读取'}</div>`;
+        `<div class="tag">${mode === 'new' ? '点击继续' : mode === 'save' ? '点击覆盖保存' : '点击读取'}</div>`;
     } else {
       div.innerHTML = `<div class="icon">📭</div><div class="name">槽位 ${n}</div><div class="desc">空槽位</div>` +
-        `<div class="tag">${mode === 'save' ? '点击保存' : '无存档'}</div>`;
+        `<div class="tag">${mode === 'new' ? '点击新开局' : mode === 'save' ? '点击保存' : '无存档'}</div>`;
     }
     div.addEventListener('click', () => {
+      if (mode === 'new') { // 新流程：选槽 → 有档继续 / 空档进角色选择
+        game.runSlot = n;
+        document.getElementById('slotPanel').classList.add('hidden');
+        if (s) { loadRunFromSlot(n); }
+        else { game.charFlow = true; document.getElementById('charPanel').classList.remove('hidden'); renderCharPanel(); }
+        return;
+      }
       if (mode === 'save') {
         saveRunToSlot(n);
         document.getElementById('slotPanel').classList.add('hidden');
@@ -4003,7 +4051,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 // ============================== UI 事件 ==============================
-document.getElementById('startBtn').addEventListener('click', () => { game.dailyMode = false; startGame(); });
+document.getElementById('startBtn').addEventListener('click', () => openSlotPanel('new')); // 新流程：开始→存档→角色→难度
 document.getElementById('againBtn').addEventListener('click', () => {
   // 见好就收：回主菜单并刷新纪录显示；结算面板同按钮也用于"再来一局"
   if (game.state === 'settle') {
@@ -4022,18 +4070,59 @@ document.getElementById('endlessBtn').addEventListener('click', () => {
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
 document.getElementById('resumeBtn').addEventListener('click', togglePause);
 document.getElementById('quitBtn').addEventListener('click', () => {
-  // 主动退出：走结算展示（老大要求：退出也要有结算），再回主菜单
+  // 主动退出：自动保存存档槽 + 结算展示（老大要求：退出也要有结算）
   document.getElementById('pausePanel').classList.add('hidden');
-  LOG.info('主动退出本局，进入结算');
+  LOG.info('主动退出本局（自动保存），进入结算');
   endRun(false, false, 'quit');
 });
-// 保存并退出：弹槽位面板（仅存活时可存，死亡无法保存）
-document.getElementById('saveQuitBtn').addEventListener('click', () => {
-  document.getElementById('pausePanel').classList.add('hidden');
-  openSlotPanel('save');
+// —— 难度选择面板（新流程第三步：普通/地狱/每日挑战）——
+function openDiffFlow() {
+  const box = document.getElementById('diffFlowCards');
+  const daily = DAILY_RULES[getDailyRule()];
+  box.innerHTML = '';
+  const items = [
+    { key: 'normal', icon: '🟢', name: '普 通', desc: '标准体验，适合熟悉游戏', tag: '推荐', locked: false },
+    { key: 'hell', icon: '🔥', name: '地 狱', desc: '怪血×1.5 · 词缀翻倍 · 经验×1.3', tag: save.hellUnlocked ? '高风险高回报' : '通关解锁🔒', locked: !save.hellUnlocked },
+    { key: 'daily', icon: '📅', name: '每日挑战', desc: '今日：' + daily.name + '——' + daily.desc, tag: '奖励 💰' + daily.reward, locked: false },
+  ];
+  for (const it of items) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `<div class="icon">${it.icon}</div><div class="name">${it.name}</div>` +
+      `<div class="desc">${it.desc}</div><div class="tag">${it.tag}</div>`;
+    div.addEventListener('click', () => {
+      if (it.locked) { LOG.info('地狱难度未解锁：先通关一次'); return; }
+      if (it.key === 'daily') { game.dailyMode = true; save.settings.difficulty = 0; }
+      else { game.dailyMode = false; save.settings.difficulty = it.key === 'hell' ? 1 : 0; }
+      writeSave();
+      game.charFlow = false;
+      document.getElementById('diffPanel').classList.add('hidden');
+      LOG.info('难度选择：' + it.name);
+      startGame();
+    });
+    box.appendChild(div);
+  }
+  document.getElementById('diffPanel').classList.remove('hidden');
+}
+document.getElementById('diffFlowBack').addEventListener('click', () => { // 返回角色选择
+  document.getElementById('diffPanel').classList.add('hidden');
+  document.getElementById('charPanel').classList.remove('hidden');
+  renderCharPanel();
 });
-// 主菜单：继续存档
-document.getElementById('continueBtn').addEventListener('click', () => openSlotPanel('load'));
+// —— 排行榜（前十 · 每次结局自动记录）——
+function renderRankList() {
+  const lb = save.leaderboard || [];
+  const box = document.getElementById('rankList');
+  if (!lb.length) { box.innerHTML = '<b>暂无战绩</b>——去打一局，退出即上榜！'; return; }
+  box.innerHTML = lb.map((r, i) => {
+    const c = CHAR_DEFS[r.char] || CHAR_DEFS.hunter;
+    return `<div style="margin:5px 0;font-size:14px">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i + 1)} ${c.icon}<b>${c.name}</b>　${fmtTime(r.t)}　${r.kills}杀　${r.win ? '🏆通关' : ''}　<span style="opacity:.7">${r.date}</span></div>`;
+  }).join('');
+}
+function closeRankPanel() {
+  document.getElementById('rankPanel').classList.add('hidden');
+  showMenu();
+}
 document.getElementById('slotBack').addEventListener('click', () => {
   document.getElementById('slotPanel').classList.add('hidden');
   if (game.state === 'paused') document.getElementById('pausePanel').classList.remove('hidden');
@@ -4139,6 +4228,11 @@ function renderCharPanel() {
       save.settings.charId = id;
       writeSave();
       LOG.info('选择角色：' + c.name);
+      if (game.charFlow) { // 新流程：角色选完 → 难度选择
+        document.getElementById('charPanel').classList.add('hidden');
+        openDiffFlow();
+        return;
+      }
       renderCharPanel();
     });
     box.appendChild(div);
@@ -4146,14 +4240,25 @@ function renderCharPanel() {
 }
 function closeCharPanel() {
   document.getElementById('charPanel').classList.add('hidden');
+  game.charFlow = false;
   showMenu();
 }
-document.getElementById('charBtn').addEventListener('click', () => {
+document.getElementById('rankBtn').addEventListener('click', () => { // 排行榜
   document.getElementById('menu').classList.add('hidden');
-  document.getElementById('charPanel').classList.remove('hidden');
-  renderCharPanel();
+  document.getElementById('rankPanel').classList.remove('hidden');
+  renderRankList();
 });
-document.getElementById('charBack').addEventListener('click', closeCharPanel);
+document.getElementById('rankBack').addEventListener('click', closeRankPanel);
+document.getElementById('rankClose').addEventListener('click', closeRankPanel);
+document.getElementById('charBack').addEventListener('click', () => { // 流程模式：返回存档选择
+  if (game.charFlow) {
+    game.charFlow = false;
+    document.getElementById('charPanel').classList.add('hidden');
+    openSlotPanel('new');
+    return;
+  }
+  closeCharPanel();
+});
 // —— 成就面板 ——
 function renderAchPanel() {
   const box = document.getElementById('achCards');
@@ -4189,11 +4294,7 @@ function renderDailyPanel() {
     `今日规则：<b style="color:#ffd77a">${r.name}</b><br>${r.desc}<br>奖励 💰${r.reward}${done ? '　（今日已达成 ✓）' : ''}`;
   document.getElementById('dailyStart').textContent = done ? '再 战 一 次' : '开 始 挑 战';
 }
-document.getElementById('dailyBtn').addEventListener('click', () => {
-  document.getElementById('menu').classList.add('hidden');
-  document.getElementById('dailyPanel').classList.remove('hidden');
-  renderDailyPanel();
-});
+// 每日挑战已并入开局难度选择（openDiffFlow）
 document.getElementById('dailyStart').addEventListener('click', () => {
   game.dailyMode = true;
   document.getElementById('dailyPanel').classList.add('hidden');
@@ -4245,19 +4346,11 @@ document.getElementById('installBtn').addEventListener('click', async () => {
 // —— 难度切换：普通/地狱（通关解锁）——
 function renderDiffBtn() {
   const btn = document.getElementById('diffBtn');
+  if (!btn) return; // 难度按钮已并入开局流程
   const cur = (save.settings.difficulty || 0) === 1;
   btn.textContent = save.hellUnlocked ? (cur ? '难度：地狱 🌋' : '难度：普通') : '难度：地狱（通关解锁🔒）';
 }
-document.getElementById('diffBtn').addEventListener('click', () => {
-  if (!save.hellUnlocked) {
-    LOG.info('地狱难度未解锁：先通关一次');
-    return;
-  }
-  save.settings.difficulty = (save.settings.difficulty || 0) === 1 ? 0 : 1;
-  writeSave();
-  renderDiffBtn();
-  LOG.info('切换难度：' + (save.settings.difficulty === 1 ? '地狱' : '普通'));
-});
+// 难度切换已并入开局流程（openDiffFlow）
 document.getElementById('charClose').addEventListener('click', closeCharPanel);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 document.getElementById('vibeBtn').addEventListener('click', () => {
@@ -4288,8 +4381,14 @@ function showMenu() {
   ensurePageBgs();
   renderDiffBtn();
   updateInstallBtn();
+  const lb = save.leaderboard || [];
   document.getElementById('menuRecords').innerHTML =
-    `金币 <b>${game.coins}</b>　历史最佳：存活 <b>${fmtTime(save.records.time)}</b>　击杀 <b>${save.records.kills}</b>　伤害 <b>${save.records.damage.toLocaleString()}</b>`;
+    `金币 <b>${game.coins}</b>　历史最佳：存活 <b>${fmtTime(save.records.time)}</b>　击杀 <b>${save.records.kills}</b><br>` +
+    `<b style="color:#ffd77a">🏆 排 行 榜 TOP${lb.length || ''}</b>` +
+    (lb.length ? '<br>' + lb.map((r, i) => {
+      const c = CHAR_DEFS[r.char] || CHAR_DEFS.hunter;
+      return `${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1)} ${c.icon} ${fmtTime(r.t)} · ${r.kills}杀 ${r.win ? '🏆通关' : ''}`;
+    }).join('<br>') : '（暂无战绩，退出即上榜）');
   document.getElementById('shop').classList.add('hidden');
   document.getElementById('menu').classList.remove('hidden');
   document.getElementById('pauseBtn').classList.add('hidden');
