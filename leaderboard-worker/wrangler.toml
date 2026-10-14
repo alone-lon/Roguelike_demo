@@ -1,0 +1,8 @@
+name = "dark-survivor-lb"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# KV 命名空间绑定（先跑 README 里的创建命令，把 id 填进来）
+[[kv_namespaces]]
+binding = "LB"
+id = "<创建后填入你的KV命名空间ID>"

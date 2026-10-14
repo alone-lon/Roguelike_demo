@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.48.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.49</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -333,7 +333,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.48.1');
+LOG.info('游戏脚本加载完成 v0.49');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -704,6 +704,7 @@ function writeSave() {
       hellUnlocked: save.hellUnlocked, // 地狱难度解锁
       dailyDone: save.dailyDone,       // 每日挑战完成标记
       tutorialDone: save.tutorialDone, // 新手引导完成标记
+      playerName: save.playerName,     // 全球榜昵称
     }));
   } catch (e) { /* 隐私模式下存储失败不影响游戏 */ }
 }
@@ -3228,6 +3229,7 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
     lb.sort((a, b) => b.score - a.score);
     save.leaderboard = lb.slice(0, 10);
     LOG.info('排行榜已记录：' + fmtTime(entry.t) + ' · ' + entry.kills + '杀' + (entry.win ? ' · 通关' : ''));
+    setTimeout(() => { maybePromptUpload(entry).catch(() => {}); }, 500); // 全球榜：够格才问（离线静默）
   } catch (err) { LOG.warn('排行榜记录失败：' + err.message); }
   // —— 存档槽生命周期：主动退出自动保存；死亡/通关/无尽结局清空 ——
   if (game.runSlot) {
@@ -4394,15 +4396,102 @@ document.getElementById('diffFlowBack').addEventListener('click', () => { // 返
   game.charFlow = false;
   openSlotPanel('new');
 });
+// —— 全球排行榜（Cloudflare Worker 后端；离线优先，3秒超时静默降级）——
+const LB_CONFIG = {
+  endpoint: '', // ← 部署 leaderboard-worker 后填地址，如 'https://dark-survivor-lb.xxx.workers.dev'
+  timeout: 3000,
+};
+let lbGlobalTop = [];      // 全球榜缓存
+let lbGlobalFetched = false;
+async function lbFetch(path, opts) {
+  if (!LB_CONFIG.endpoint) return null; // 未接入后端
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), LB_CONFIG.timeout); // 超时即离线降级
+  try {
+    const res = await fetch(LB_CONFIG.endpoint + path, { ...opts, signal: ctrl.signal });
+    return await res.json();
+  } catch (e) { return null; } finally { clearTimeout(timer); }
+}
+async function lbRefreshGlobal() {
+  const data = await lbFetch('/top');
+  if (data && data.ok) { lbGlobalTop = data.top; lbGlobalFetched = true; }
+  return lbGlobalTop;
+}
+function escapeHtml(s) { // 全球榜昵称防注入
+  return String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+// 成绩超过全球榜第10名（或榜未满）才问玩家要不要上传——够格才打扰
+async function maybePromptUpload(entry) {
+  if (!LB_CONFIG.endpoint) return;
+  const top = await lbRefreshGlobal();
+  const lastScore = top.length >= 10 ? top[top.length - 1].score : -1;
+  if (top.length >= 10 && entry.score <= lastScore) return; // 不够格不打扰
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(5,3,10,0.8);z-index:70;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#241f2e;border:1px solid #4a7a8a;border-radius:14px;padding:22px 26px;width:320px;max-width:86vw;text-align:center;">
+      <div style="font-size:20px;color:#7dd3fc;margin-bottom:8px;">🌐 成绩够格上全球榜！</div>
+      <div style="font-size:13px;color:#c9c2d8;line-height:1.7;margin-bottom:10px;">${fmtTime(entry.t)} · ${entry.kills}杀${entry.win ? ' · 🏆通关' : ''}<br>超过全球第10名，是否上传？</div>
+      <input id="lbNameInput" maxlength="12" placeholder="输入昵称（全球可见）"
+        style="width:100%;padding:10px;border-radius:8px;border:1px solid #4a3a5a;background:#2e2440;color:#fff;font-size:15px;box-sizing:border-box;text-align:center;" />
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;">
+        <button id="lbSkip" style="flex:1;padding:10px;border-radius:8px;border:none;background:#3a3350;color:#ddd;cursor:pointer;font-size:14px;">只存本机</button>
+        <button id="lbUpload" style="flex:1;padding:10px;border-radius:8px;border:none;background:#1f6f8b;color:#fff;cursor:pointer;font-size:14px;">🚀 上传</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('#lbNameInput');
+  input.value = save.playerName || '无名幸存者';
+  overlay.querySelector('#lbSkip').addEventListener('click', () => { overlay.remove(); LOG.info('成绩只存本机（玩家拒绝上传）'); });
+  overlay.querySelector('#lbUpload').addEventListener('click', async () => {
+    const name = (input.value || '无名幸存者').trim().slice(0, 12);
+    const btn = overlay.querySelector('#lbUpload');
+    btn.textContent = '上传中…';
+    const data = await lbFetch('/submit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, t: entry.t, kills: entry.kills, dmg: entry.dmg, win: entry.win, char: entry.char, date: entry.date }),
+    });
+    if (data && data.ok) {
+      save.playerName = name; writeSave();
+      lbGlobalTop = data.top; lbGlobalFetched = true;
+      overlay.remove();
+      LOG.info('全球榜上传成功' + (data.entered ? '（进前10）' : ''));
+      if (!document.getElementById('rankPanel').classList.contains('hidden')) renderRankList();
+    } else {
+      btn.textContent = '🚀 上传'; btn.style.background = '#7a3a3a';
+      LOG.warn('全球榜上传失败（离线/超时），成绩已存本机');
+    }
+  });
+}
+
 // —— 排行榜（前十 · 每次结局自动记录）——
 function renderRankList() {
   const lb = save.leaderboard || [];
   const box = document.getElementById('rankList');
-  if (!lb.length) { box.innerHTML = '<b>暂无战绩</b>——去打一局，退出即上榜！'; return; }
-  box.innerHTML = lb.map((r, i) => {
-    const c = CHAR_DEFS[r.char] || CHAR_DEFS.hunter;
-    return `<div style="margin:5px 0;font-size:14px">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i + 1)} ${c.icon}<b>${c.name}</b>　${fmtTime(r.t)}　${r.kills}杀　${r.win ? '🏆通关' : ''}　<span style="opacity:.7">${r.date}</span></div>`;
-  }).join('');
+  if (LB_CONFIG.endpoint && !lbGlobalFetched) lbRefreshGlobal().then(() => renderRankList()); // 首开异步拉全球榜
+  // —— 🌐 全球榜 ——
+  let g = '<b style="color:#7dd3fc">🌐 全 球 榜 TOP10</b><br>';
+  if (!LB_CONFIG.endpoint) {
+    g += '<span style="opacity:.7">（未接入后端）</span>';
+  } else if (!lbGlobalTop.length) {
+    g += '<span style="opacity:.7">' + (lbGlobalFetched ? '暂无全球记录——打一局上传占坑！' : '加载中…') + '</span>';
+  } else {
+    g += lbGlobalTop.map((r, i) => {
+      const c = CHAR_DEFS[r.char] || CHAR_DEFS.hunter;
+      return `<div style="margin:5px 0;font-size:14px">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i + 1)} ${c.icon}<b>${escapeHtml(r.name)}</b>　${fmtTime(r.t)}　${r.kills}杀　${r.win ? '🏆通关' : ''}</div>`;
+    }).join('');
+  }
+  // —— 💾 本机榜 ——
+  let l = '<br><b style="color:#ffd77a">💾 本 机 榜 TOP10</b><br>';
+  if (!lb.length) {
+    l += '<span style="opacity:.7">暂无战绩——去打一局，退出即上榜！</span>';
+  } else {
+    l += lb.map((r, i) => {
+      const c = CHAR_DEFS[r.char] || CHAR_DEFS.hunter;
+      return `<div style="margin:5px 0;font-size:14px">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i + 1)} ${c.icon}<b>${c.name}</b>　${fmtTime(r.t)}　${r.kills}杀　${r.win ? '🏆通关' : ''}　<span style="opacity:.7">${r.date}</span></div>`;
+    }).join('');
+  }
+  box.innerHTML = g + l;
 }
 function closeRankPanel() {
   document.getElementById('rankPanel').classList.add('hidden');
