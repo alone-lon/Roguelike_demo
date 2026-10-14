@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.48</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.48.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -333,7 +333,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.48');
+LOG.info('游戏脚本加载完成 v0.48.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -4558,22 +4558,23 @@ function renderCharPanel() {
   const box = document.getElementById('charCards');
   box.innerHTML = '';
   const cur = save.settings.charId || 'hunter';
-  // 每日规则跟职业挂钩：提示推荐职业（召唤狂潮→召唤师 等）
-  const dailyNeed = { summon_only: 'summoner', orb: 'warlock', thorn_only: 'paladin' }[dailyMod() || ''] || null;
-  document.querySelector('#charPanel .subtitle').textContent = dailyNeed
-    ? '⚠ 今日规则「' + DAILY_RULES[getDailyRule()].name + '」推荐职业：' + CHAR_DEFS[dailyNeed].icon + CHAR_DEFS[dailyNeed].name
+  // 每日规则↔职业技能池绑定：技能绑定职业的规则只显示适配职业（其他职业进去也没技能）
+  const dailyLock = game.dailyMode ? ({ summon_only: 'summoner', orb: 'warlock', thorn_only: 'paladin' }[dailyMod() || ''] || null) : null;
+  document.querySelector('#charPanel .subtitle').textContent = dailyLock
+    ? '⚠ 今日规则「' + DAILY_RULES[getDailyRule()].name + '」职业限定：' + CHAR_DEFS[dailyLock].icon + CHAR_DEFS[dailyLock].name + '（技能池绑定）'
     : '不同角色初始武器与加成不同（选完进入战场）';
   for (const id in CHAR_DEFS) {
-    const c = CHAR_DEFS[id];
+    if (dailyLock && id !== dailyLock) continue; // 每日限定：只显示规则适配职业
+    const def = CHAR_DEFS[id];
     const div = document.createElement('div');
     div.className = 'card' + (id === cur ? ' evo' : '');
-    div.innerHTML = `<div class="icon">${c.icon}</div><div class="name">${c.name}</div>` +
-      `<div class="desc">${c.desc}<br><b style="color:#ffd77a">${c.bonus}</b><br>初始武器：${WEAPON_DEFS[c.weapon].name}</div>` +
-      `<div class="tag">${id === cur ? '当前选择 ✓' : (dailyNeed === id ? '今日推荐 🌟' : (dailyNeed ? '今日受限' : '点击选择'))}</div>`;
+    div.innerHTML = `<div class="icon">${def.icon}</div><div class="name">${def.name}</div>` +
+      `<div class="desc">${def.desc}<br><b style="color:#ffd77a">${def.bonus}</b><br>初始武器：${WEAPON_DEFS[def.weapon].name}</div>` +
+      `<div class="tag">${id === cur ? '当前选择 ✓' : (dailyLock === id ? '今日限定 🌟' : '点击选择')}</div>`;
     div.addEventListener('click', () => {
       save.settings.charId = id;
       writeSave();
-      LOG.info('选择角色：' + c.name);
+      LOG.info('选择角色：' + def.name);
       if (game.charFlow) { // 新流程：角色选完 → 进入战场
         document.getElementById('charPanel').classList.add('hidden');
         LOG.info('角色确认，进入战场');
