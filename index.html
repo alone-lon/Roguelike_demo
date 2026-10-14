@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.45.2</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.46</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -328,7 +328,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.45.2');
+LOG.info('游戏脚本加载完成 v0.46');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1734,7 +1734,7 @@ function spawnEnemy(type, x, y, noAffix) {
   enemies.push({
     type, x, y, r: d.r * (af === 'bulky' ? 1.25 : 1), hp: d.hp * hm * (af === 'bulky' ? 2.5 : 1),
     maxHp: d.hp * hm * (af === 'bulky' ? 2.5 : 1),
-    speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08) * (af === 'swift' ? 1.5 : 1) * (dailyMod() === 'swift' ? 1.2 : 1),
+    speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08) * (af === 'swift' ? 1.5 : 1) * (dailyMod() === 'swift' ? 1.2 : 1) * (player.enemySpdMult || 1),
     dmg: d.dmg * dmgMult() * (af === 'bulky' ? 1.4 : 1),
     xp: Math.round(d.xp * (af === 'bulky' ? 2 : af === 'summoner' ? 1.8 : af === 'split' ? 1.5 : af === 'swift' ? 1.3 : 1)),
     scale: d.scale * (af === 'bulky' ? 1.2 : 1), body: d.body, head: d.head, horns: d.horns, miniBoss: d.miniBoss,
@@ -2673,6 +2673,7 @@ function enemyDisplayName(e) {
 
 function damagePlayer(dmg, attacker, atkName) {
   if (player.iframe > 0 || game.state !== 'playing') return;
+  dmg = Math.round(dmg * (player.dmgTakenMult || 1)); // 诅咒契约：受到伤害倍率
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
   // 荆棘光环反伤：攻击者挨刺（进化：荆棘领域翻倍）
@@ -3109,6 +3110,8 @@ function startGame() {
   game.level = 1; game.xp = 0; game.xpNeed = CONFIG.xpNeed(1);
   game.endless = false; game.bossSpawned = false; game.boss = null; game.bossPhase = 1; // Boss阶段（1/2）
   game.theme = 0; // 地图主题（0荒原/1森林/2熔岩）
+  game.nextContractT = 150; game.contractOffers = 0; game.contractsTaken = 0; // 诅咒契约计时
+  player.dmgTakenMult = 1; player.enemySpdMult = 1; // 契约倍率复位（旧档无此字段=1）
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
@@ -3315,6 +3318,60 @@ function loadRunFromSlot(n) {
   try { localStorage.removeItem(RUN_SLOT_PREFIX + n); } catch (e) { /* 忽略 */ } // 读取即焚
   game.runSlot = n; // 绑定槽位：退出自动保存回同一槽
   LOG.info('读取槽位' + n + '继续冒险（存档已销毁）');
+}
+
+// —— 三期#4 诅咒契约：贪念之神的交易（2选1 或拒绝，风险换收益）——
+const CONTRACTS = [
+  { id: 'blood', icon: '⚔️', name: '嗜血契约', buff: '伤害 ×1.35', curse: '生命上限 −25%',
+    apply() { player.atk = Math.round(player.atk * 1.35); player.maxHp = Math.round(player.maxHp * 0.75); player.hp = Math.min(player.hp, player.maxHp); } },
+  { id: 'greed', icon: '💰', name: '贪婪契约', buff: '金币获取 ×2', curse: '敌人移速 +20%',
+    apply() { player.goldGain *= 2; player.enemySpdMult = (player.enemySpdMult || 1) * 1.2; } },
+  { id: 'wind', icon: '💨', name: '疾风契约', buff: '移速 +25%', curse: '防御 −3',
+    apply() { player.speed = Math.round(player.speed * 1.25); player.armor = Math.max(0, player.armor - 3); } },
+  { id: 'glass', icon: '💎', name: '玻璃大炮', buff: '攻击 ×1.6', curse: '受到伤害 ×1.5',
+    apply() { player.atk = Math.round(player.atk * 1.6); player.dmgTakenMult = (player.dmgTakenMult || 1) * 1.5; } },
+  { id: 'leech', icon: '🩸', name: '血之契约', buff: '吸血 +5%', curse: '经验获取 −20%',
+    apply() { player.lifesteal += 0.05; player.xpGain *= 0.8; } },
+  { id: 'swift', icon: '⏱', name: '迅捷契约', buff: '技能冷却 ×0.8', curse: '生命上限 −15%',
+    apply() { player.cd *= 0.8; player.maxHp = Math.round(player.maxHp * 0.85); player.hp = Math.min(player.hp, player.maxHp); } },
+];
+function openContractPanel() {
+  const picks = [...CONTRACTS].sort(() => Math.random() - 0.5).slice(0, 2); // 随机抽两份
+  const overlay = document.createElement('div');
+  overlay.id = 'contractOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,4,16,0.86);z-index:68;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#241f2e;border:1px solid #8a4a4a;border-radius:16px;padding:22px 24px;width:380px;max-width:92vw;text-align:center;">
+      <div style="font-size:21px;color:#ff8a8a;margin-bottom:4px;">📜 诅 咒 契 约</div>
+      <div style="font-size:12.5px;color:#b8a8c8;margin-bottom:12px;">贪念之神的交易：拿走力量，留下代价</div>
+      <div id="contractCards" style="display:flex;gap:10px;"></div>
+      <button id="contractSkip" style="margin-top:14px;width:100%;padding:10px;border-radius:9px;border:1px solid #4a3a5a;background:transparent;color:#c9b8d8;cursor:pointer;font-size:14px;">🚫 拒绝契约（代价太大）</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const box = overlay.querySelector('#contractCards');
+  picks.forEach(c => {
+    const card = document.createElement('div');
+    card.style.cssText = 'flex:1;background:#2e2440;border:1px solid #6b4a8a;border-radius:12px;padding:14px 10px;cursor:pointer;';
+    card.innerHTML = `<div style="font-size:26px;">${c.icon}</div>
+      <div style="font-size:15px;color:#ffd77a;margin:6px 0 8px;">${c.name}</div>
+      <div style="font-size:12.5px;color:#7dff8a;">▲ ${c.buff}</div>
+      <div style="font-size:12.5px;color:#ff8a8a;margin-top:4px;">▼ ${c.curse}</div>`;
+    card.addEventListener('click', () => { // 签约：收益与代价同时生效
+      c.apply();
+      overlay.remove();
+      game.state = 'playing';
+      game.contractsTaken = (game.contractsTaken || 0) + 1;
+      game.bannerText = c.icon + ' 契约成立 · ' + c.name + ' ' + c.icon;
+      game.bannerT = 2.5;
+      LOG.info('签订契约：' + c.name + '（' + c.buff + ' / ' + c.curse + '）');
+    });
+    box.appendChild(card);
+  });
+  overlay.querySelector('#contractSkip').addEventListener('click', () => {
+    overlay.remove();
+    game.state = 'playing';
+    LOG.info('拒绝契约');
+  });
 }
 
 // —— 删档二次确认弹层（JS 动态构建，防误删）——
@@ -4159,6 +4216,13 @@ function loop(now) {
   game.bloodT = Math.max(0, game.bloodT - dt);
   game.achCd = (game.achCd || 0) - dt;
   if (game.achCd <= 0) { game.achCd = 5; checkAchievements('live'); } // 局中成就巡检
+  // —— 诅咒契约：150秒首约，之后每210秒一约（一局最多4次）——
+  if (game.state === 'playing' && (game.contractOffers || 0) < 4 && game.time >= (game.nextContractT || 150)) {
+    game.contractOffers = (game.contractOffers || 0) + 1;
+    game.nextContractT = game.time + 210;
+    game.state = 'contract'; // 暂停，等签约/拒绝
+    openContractPanel();
+  }
   // —— 地图主题轮换：5分钟一换（血月荒原→腐化森林→熔岩地窟）——
   const newTheme = Math.min(2, Math.floor(game.time / 300));
   if (newTheme !== (game.theme || 0)) {
