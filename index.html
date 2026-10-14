@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.45</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.45.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -328,7 +328,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.45');
+LOG.info('游戏脚本加载完成 v0.45.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -2726,9 +2726,10 @@ function generateOptions() {
   if (Object.keys(player.weapons).length < Object.keys(WEAPON_DEFS).length) {
     const summonSet = ['skeleton', 'wolf', 'gargoyle', 'necro', 'colossus', 'mine'];
     const wPool = CHAR_WEAPONS[save.settings.charId || 'hunter'] || Object.keys(WEAPON_DEFS); // 职业专属池
+    const wHasSummon = wPool.some(x2 => summonSet.includes(x2)); // 无召唤系武器的职业不强行过滤（防空池）
     for (const id of wPool) {
       if (player.weapons[id] || !WEAPON_DEFS[id]) continue;
-      if (dailyMod() === 'summon_only' && !summonSet.includes(id)) continue; // 每日：只许召唤系
+      if (dailyMod() === 'summon_only' && wHasSummon && !summonSet.includes(id)) continue; // 每日：只许召唤系
       others.push({ type: 'newWeapon', id, tag: '新武器' });
     }
   }
@@ -3339,11 +3340,11 @@ function openSlotPanel(mode) {
         `<div class="tag">${mode === 'new' ? '点击新开局' : mode === 'save' ? '点击保存' : '无存档'}</div>`;
     }
     div.addEventListener('click', () => {
-      if (mode === 'new') { // 新流程：选槽 → 有档继续 / 空档进角色选择
+      if (mode === 'new') { // 新流程：选槽 → 有档继续 / 空档先进难度选择（每日规则跟职业相关）
         game.runSlot = n;
         document.getElementById('slotPanel').classList.add('hidden');
         if (s) { loadRunFromSlot(n); }
-        else { game.charFlow = true; document.getElementById('charPanel').classList.remove('hidden'); renderCharPanel(); }
+        else { openDiffFlow(); }
         return;
       }
       if (mode === 'save') {
@@ -3688,6 +3689,40 @@ function render() {
       ctx.beginPath(); ctx.arc(x + 10, y - 14, 1.2, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#3a2c5e'; ctx.lineWidth = 3; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(x - 10, y - 9); ctx.quadraticCurveTo(x - 16, y - 14, x - 13, y - 18); ctx.stroke();
+    } else if (m.kind === 'necro') {
+      // 亡灵法师：紫袍尖帽 + 骨杖绿火
+      ctx.fillStyle = '#4a2c74'; // 法袍
+      ctx.beginPath();
+      ctx.moveTo(x - 10, y); ctx.lineTo(x - 7, y - 18); ctx.lineTo(x + 7, y - 18); ctx.lineTo(x + 10, y); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#35204f'; // 尖帽
+      ctx.beginPath();
+      ctx.moveTo(x - 8, y - 17); ctx.lineTo(x + 1, y - 32); ctx.lineTo(x + 8, y - 17); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#0c0618'; // 脸部阴影
+      ctx.beginPath(); ctx.arc(x, y - 13, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#7dff8a'; // 绿瞳
+      ctx.beginPath(); ctx.arc(x - 2, y - 13.5, 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 2, y - 13.5, 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#c9c2b0'; ctx.lineWidth = 2; // 骨杖
+      ctx.beginPath(); ctx.moveTo(x + 9, y - 4); ctx.lineTo(x + 11, y - 22); ctx.stroke();
+      ctx.fillStyle = '#7dff8a'; // 杖头绿火
+      ctx.beginPath(); ctx.arc(x + 11, y - 24, 2.6, 0, Math.PI * 2); ctx.fill();
+    } else if (m.kind === 'colossus') {
+      // 骷髅巨像：巨型骨架 + 肩刺 + 红瞳
+      ctx.fillStyle = '#d8d0bc'; // 大颅骨
+      ctx.beginPath(); ctx.arc(x, y - 22, 13, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a1a10'; // 眼窝
+      ctx.beginPath(); ctx.arc(x - 5, y - 25, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 5, y - 25, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff5544'; // 红瞳
+      ctx.beginPath(); ctx.arc(x - 5, y - 25, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 5, y - 25, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#b8ac90'; // 躯干骨块
+      roundRect(x - 12, y - 12, 24, 16, 5); ctx.fill();
+      ctx.fillStyle = '#8a7c60'; // 肩刺
+      ctx.beginPath(); ctx.moveTo(x - 12, y - 12); ctx.lineTo(x - 23, y - 23); ctx.lineTo(x - 8, y - 13); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 12, y - 12); ctx.lineTo(x + 23, y - 23); ctx.lineTo(x + 8, y - 13); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#6a5c42'; ctx.lineWidth = 2; // 颌骨线
+      ctx.beginPath(); ctx.moveTo(x - 6, y - 16); ctx.lineTo(x + 6, y - 16); ctx.stroke();
     } else {
       // 小骷髅
       ctx.fillStyle = '#e8e0ff';
@@ -3697,9 +3732,28 @@ function render() {
       ctx.beginPath(); ctx.arc(x + 3, y - 12, 2, 0, Math.PI * 2); ctx.fill();
     }
   }
-  // 幽灵弓手（半透明灵体+小弓）
+  // 石像鬼哨卫 / 幽灵弓手（各自独立形象）
   for (const t of turrets) {
     const x = wx(t.x), y = wy(t.y) + Math.sin(performance.now() / 300 + t.orbitA * 3) * 3;
+    if (t.kind === 'gargoyle') {
+      // 石像鬼：灰石雕像 + 双翼 + 橙瞳
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath(); ctx.ellipse(x, y, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#565664'; // 石翼（两侧展开）
+      ctx.beginPath(); ctx.moveTo(x - 9, y - 18); ctx.lineTo(x - 25, y - 27); ctx.lineTo(x - 10, y - 9); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 9, y - 18); ctx.lineTo(x + 25, y - 27); ctx.lineTo(x + 10, y - 9); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#6a6a76'; // 石身
+      roundRect(x - 9, y - 20, 18, 18, 5); ctx.fill();
+      ctx.fillStyle = '#7c7c8a'; // 石首
+      ctx.beginPath(); ctx.arc(x, y - 25, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4c4c5a'; // 石冠角
+      ctx.beginPath(); ctx.moveTo(x - 7, y - 30); ctx.lineTo(x - 10, y - 38); ctx.lineTo(x - 3, y - 31); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x + 7, y - 30); ctx.lineTo(x + 10, y - 38); ctx.lineTo(x + 3, y - 31); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ff9040'; // 橙瞳
+      ctx.beginPath(); ctx.arc(x - 3, y - 26, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 3, y - 26, 1.8, 0, Math.PI * 2); ctx.fill();
+      continue;
+    }
     ctx.fillStyle = 'rgba(140,200,255,0.28)'; // 灵体光晕
     ctx.beginPath(); ctx.arc(x, y - 12, 12, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(190,230,255,0.85)';
@@ -4155,19 +4209,20 @@ function openDiffFlow() {
       if (it.key === 'daily') { game.dailyMode = true; save.settings.difficulty = 0; }
       else { game.dailyMode = false; save.settings.difficulty = it.key === 'hell' ? 1 : 0; }
       writeSave();
-      game.charFlow = false;
+      game.charFlow = true;
       document.getElementById('diffPanel').classList.add('hidden');
       LOG.info('难度选择：' + it.name);
-      startGame();
+      document.getElementById('charPanel').classList.remove('hidden'); // 难度之后选角色
+      renderCharPanel();
     });
     box.appendChild(div);
   }
   document.getElementById('diffPanel').classList.remove('hidden');
 }
-document.getElementById('diffFlowBack').addEventListener('click', () => { // 返回角色选择
+document.getElementById('diffFlowBack').addEventListener('click', () => { // 返回存档选择
   document.getElementById('diffPanel').classList.add('hidden');
-  document.getElementById('charPanel').classList.remove('hidden');
-  renderCharPanel();
+  game.charFlow = false;
+  openSlotPanel('new');
 });
 // —— 排行榜（前十 · 每次结局自动记录）——
 function renderRankList() {
@@ -4277,20 +4332,26 @@ function renderCharPanel() {
   const box = document.getElementById('charCards');
   box.innerHTML = '';
   const cur = save.settings.charId || 'hunter';
+  // 每日规则跟职业挂钩：提示推荐职业（召唤狂潮→召唤师 等）
+  const dailyNeed = { summon_only: 'summoner', orb: 'warlock', thorn_only: 'paladin' }[dailyMod() || ''] || null;
+  document.querySelector('#charPanel .subtitle').textContent = dailyNeed
+    ? '⚠ 今日规则「' + DAILY_RULES[getDailyRule()].name + '」推荐职业：' + CHAR_DEFS[dailyNeed].icon + CHAR_DEFS[dailyNeed].name
+    : '不同角色初始武器与加成不同（选完进入战场）';
   for (const id in CHAR_DEFS) {
     const c = CHAR_DEFS[id];
     const div = document.createElement('div');
     div.className = 'card' + (id === cur ? ' evo' : '');
     div.innerHTML = `<div class="icon">${c.icon}</div><div class="name">${c.name}</div>` +
       `<div class="desc">${c.desc}<br><b style="color:#ffd77a">${c.bonus}</b><br>初始武器：${WEAPON_DEFS[c.weapon].name}</div>` +
-      `<div class="tag">${id === cur ? '当前选择 ✓' : '点击选择'}</div>`;
+      `<div class="tag">${id === cur ? '当前选择 ✓' : (dailyNeed === id ? '今日推荐 🌟' : (dailyNeed ? '今日受限' : '点击选择'))}</div>`;
     div.addEventListener('click', () => {
       save.settings.charId = id;
       writeSave();
       LOG.info('选择角色：' + c.name);
-      if (game.charFlow) { // 新流程：角色选完 → 难度选择
+      if (game.charFlow) { // 新流程：角色选完 → 进入战场
         document.getElementById('charPanel').classList.add('hidden');
-        openDiffFlow();
+        LOG.info('角色确认，进入战场');
+        startGame();
         return;
       }
       renderCharPanel();
@@ -4310,11 +4371,10 @@ document.getElementById('rankBtn').addEventListener('click', () => { // 排行�
 });
 document.getElementById('rankBack').addEventListener('click', closeRankPanel);
 document.getElementById('rankClose').addEventListener('click', closeRankPanel);
-document.getElementById('charBack').addEventListener('click', () => { // 流程模式：返回存档选择
+document.getElementById('charBack').addEventListener('click', () => { // 流程模式：返回难度选择
   if (game.charFlow) {
-    game.charFlow = false;
     document.getElementById('charPanel').classList.add('hidden');
-    openSlotPanel('new');
+    openDiffFlow();
     return;
   }
   closeCharPanel();
