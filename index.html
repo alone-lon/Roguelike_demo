@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.44</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.45</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -328,7 +328,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.44');
+LOG.info('游戏脚本加载完成 v0.45');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1535,27 +1535,42 @@ function drawCreatureFace(x, y, s) {
   ctx.beginPath(); ctx.arc(x + 7.5 * s, y + 3.2 * s, 2.2 * s, 0, Math.PI * 2); ctx.fill();
 }
 
-// 2.5D等距地面：暗黑风格焦黑石板 A/B 双砖交替平铺（打破单一感；预渲染性能友好）
-const groundTileA = document.createElement('canvas');
-const groundTileB = document.createElement('canvas');
-groundTileA.width = groundTileB.width = 128;
-groundTileA.height = groundTileB.height = 64;
-(function renderGroundTiles() {
-  for (const [tile, variant] of [[groundTileA, 0], [groundTileB, 1]]) {
+// 2.5D等距地面：三主题 × A/B 双砖预渲染（血月荒原/腐化森林/熔岩地窟，5分钟轮换）
+const MAP_THEMES = [
+  { name: '血月荒原', icon: '🌕', desc: '焦黑石板与白骨残骸',
+    base: '#0e0b14', top: '#15121b', bot: '#100d16',
+    seam1: 'rgba(115,100,145,0.22)', seam2: 'rgba(4,2,8,0.5)', crack: 'rgba(8,4,14,0.55)',
+    fog: 'rgba(80,30,60,0.10)' },
+  { name: '腐化森林', icon: '🌿', desc: '毒雾苔原与盘根错节',
+    base: '#0b140e', top: '#12211a', bot: '#0c1710',
+    seam1: 'rgba(90,150,110,0.22)', seam2: 'rgba(2,8,4,0.5)', crack: 'rgba(4,12,6,0.55)',
+    fog: 'rgba(40,120,70,0.12)' },
+  { name: '熔岩地窟', icon: '🌋', desc: '玄武岩与灼热熔纹',
+    base: '#150a08', top: '#241210', bot: '#180c08',
+    seam1: 'rgba(200,110,60,0.26)', seam2: 'rgba(10,3,2,0.5)', crack: 'rgba(255,110,40,0.35)',
+    fog: 'rgba(180,60,20,0.12)' },
+];
+const groundTiles = []; // groundTiles[主题][0=A砖,1=B砖]
+function renderGroundTilesFor(ti) {
+  const th = MAP_THEMES[ti];
+  const pair = [];
+  for (const variant of [0, 1]) {
+    const tile = document.createElement('canvas');
+    tile.width = 128; tile.height = 64;
     const g = tile.getContext('2d');
-    // 焦黑石板底色（上浅下深）
-    g.fillStyle = '#15121b'; g.fillRect(0, 0, 128, 64);
-    g.fillStyle = '#100d16'; g.fillRect(0, 32, 128, 32);
-    // 等距石板缝（冷灰亮缝 + 深黑内凹）
+    // 石板底色（上浅下深）
+    g.fillStyle = th.top; g.fillRect(0, 0, 128, 64);
+    g.fillStyle = th.bot; g.fillRect(0, 32, 128, 32);
+    // 等距石板缝
     const diamond = (cx, cy) => {
-      g.strokeStyle = 'rgba(115,100,145,0.22)'; g.lineWidth = 1.6;
+      g.strokeStyle = th.seam1; g.lineWidth = 1.6;
       g.beginPath(); g.moveTo(cx, cy - 16); g.lineTo(cx + 32, cy); g.lineTo(cx, cy + 16); g.lineTo(cx - 32, cy); g.closePath(); g.stroke();
-      g.strokeStyle = 'rgba(4,2,8,0.5)'; g.lineWidth = 1;
+      g.strokeStyle = th.seam2; g.lineWidth = 1;
       g.beginPath(); g.moveTo(cx, cy - 11); g.lineTo(cx + 22, cy); g.lineTo(cx, cy + 11); g.lineTo(cx - 22, cy); g.closePath(); g.stroke();
     };
     diamond(32, 16); diamond(96, 16); diamond(32, 48); diamond(96, 48); diamond(64, 32); diamond(0, 32); diamond(128, 32);
-    // 龟裂纹（石板裂痕，随机走向）
-    g.strokeStyle = 'rgba(8,4,14,0.55)'; g.lineWidth = 1.2;
+    // 龟裂纹（熔岩主题=发亮熔纹）
+    g.strokeStyle = th.crack; g.lineWidth = 1.2;
     for (let i = 0; i < 4; i++) {
       const x0 = Math.random() * 128, y0 = Math.random() * 64;
       g.beginPath(); g.moveTo(x0, y0);
@@ -1563,35 +1578,66 @@ groundTileA.height = groundTileB.height = 64;
       g.lineTo(x0 + rand(-22, 22), y0 + rand(-11, 11));
       g.stroke();
     }
-    if (variant === 0) {
-      // A 砖：白骨残骸 + 幽绿鬼火
-      g.strokeStyle = 'rgba(205,195,225,0.16)'; g.lineWidth = 2;
-      for (let i = 0; i < 3; i++) {
-        const bx = Math.random() * 118 + 5, by = Math.random() * 54 + 5;
-        g.beginPath(); g.moveTo(bx - 3, by - 2); g.lineTo(bx + 3, by + 2); g.moveTo(bx - 3, by + 2); g.lineTo(bx + 3, by - 2); g.stroke();
+    // 主题装饰（A/B 各一种）
+    if (ti === 0) { // 荒原：白骨 / 血渍
+      if (variant === 0) {
+        g.strokeStyle = 'rgba(205,195,225,0.16)'; g.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          const bx = Math.random() * 118 + 5, by = Math.random() * 54 + 5;
+          g.beginPath(); g.moveTo(bx - 3, by - 2); g.lineTo(bx + 3, by + 2); g.moveTo(bx - 3, by + 2); g.lineTo(bx + 3, by - 2); g.stroke();
+        }
+        for (let i = 0; i < 2; i++) {
+          const px = Math.random() * 128, py = Math.random() * 64;
+          g.fillStyle = 'rgba(90,220,150,0.13)'; g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.fill();
+          g.fillStyle = 'rgba(140,255,190,0.22)'; g.beginPath(); g.arc(px, py, 1.3, 0, Math.PI * 2); g.fill();
+        }
+      } else {
+        for (let i = 0; i < 2; i++) {
+          const x0 = Math.random() * 128, y0 = Math.random() * 64;
+          g.fillStyle = 'rgba(110,20,35,0.16)'; g.beginPath(); g.ellipse(x0, y0, rand(7, 16), rand(4, 9), rand(0, 3), 0, Math.PI * 2); g.fill();
+        }
+        g.fillStyle = 'rgba(5,2,8,0.35)';
+        for (let i = 0; i < 2; i++) {
+          const x0 = Math.random() * 128, y0 = Math.random() * 64;
+          g.beginPath(); g.ellipse(x0, y0, rand(9, 18), rand(5, 10), rand(0, 3), 0, Math.PI * 2); g.fill();
+        }
       }
-      for (let i = 0; i < 2; i++) {
-        const px = Math.random() * 128, py = Math.random() * 64;
-        g.fillStyle = 'rgba(90,220,150,0.13)';
-        g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.fill();
-        g.fillStyle = 'rgba(140,255,190,0.22)';
-        g.beginPath(); g.arc(px, py, 1.3, 0, Math.PI * 2); g.fill();
+    } else if (ti === 1) { // 森林：苔藓簇 / 盘根
+      if (variant === 0) {
+        for (let i = 0; i < 5; i++) {
+          const px = Math.random() * 128, py = Math.random() * 64;
+          g.fillStyle = 'rgba(90,200,120,0.13)'; g.beginPath(); g.arc(px, py, rand(2.5, 5), 0, Math.PI * 2); g.fill();
+          g.fillStyle = 'rgba(150,255,180,0.18)'; g.beginPath(); g.arc(px, py, 1.4, 0, Math.PI * 2); g.fill();
+        }
+      } else {
+        g.strokeStyle = 'rgba(120,90,50,0.22)'; g.lineWidth = 2.2;
+        for (let i = 0; i < 3; i++) {
+          const x0 = Math.random() * 128, y0 = Math.random() * 64;
+          g.beginPath(); g.moveTo(x0, y0);
+          g.quadraticCurveTo(x0 + rand(-14, 14), y0 + rand(-8, 8), x0 + rand(-26, 26), y0 + rand(-12, 12));
+          g.stroke();
+        }
       }
-    } else {
-      // B 砖：暗血污渍 + 焦痕
-      for (let i = 0; i < 2; i++) {
-        const x0 = Math.random() * 128, y0 = Math.random() * 64;
-        g.fillStyle = 'rgba(110,20,35,0.16)';
-        g.beginPath(); g.ellipse(x0, y0, rand(7, 16), rand(4, 9), rand(0, 3), 0, Math.PI * 2); g.fill();
-      }
-      g.fillStyle = 'rgba(5,2,8,0.35)';
-      for (let i = 0; i < 2; i++) {
-        const x0 = Math.random() * 128, y0 = Math.random() * 64;
-        g.beginPath(); g.ellipse(x0, y0, rand(9, 18), rand(5, 10), rand(0, 3), 0, Math.PI * 2); g.fill();
+    } else { // 熔岩：熔岩亮斑 / 焦黑灼痕
+      if (variant === 0) {
+        for (let i = 0; i < 3; i++) {
+          const px = Math.random() * 128, py = Math.random() * 64;
+          g.fillStyle = 'rgba(255,120,40,0.16)'; g.beginPath(); g.arc(px, py, rand(3, 6), 0, Math.PI * 2); g.fill();
+          g.fillStyle = 'rgba(255,200,120,0.28)'; g.beginPath(); g.arc(px, py, 1.5, 0, Math.PI * 2); g.fill();
+        }
+      } else {
+        g.fillStyle = 'rgba(5,2,2,0.4)';
+        for (let i = 0; i < 2; i++) {
+          const x0 = Math.random() * 128, y0 = Math.random() * 64;
+          g.beginPath(); g.ellipse(x0, y0, rand(9, 18), rand(5, 10), rand(0, 3), 0, Math.PI * 2); g.fill();
+        }
       }
     }
+    pair.push(tile);
   }
-})();
+  groundTiles.push(pair);
+}
+for (let ti = 0; ti < MAP_THEMES.length; ti++) renderGroundTilesFor(ti);
 
 // ============================== 音效槽位（v0.5 Web Audio 合成） ==============================
 // 预留：const AudioSys = { play(name){...} }
@@ -3061,6 +3107,7 @@ function startGame() {
   document.getElementById('installBtn').classList.add('hidden'); // PWA 安装按钮战时隐藏
   game.level = 1; game.xp = 0; game.xpNeed = CONFIG.xpNeed(1);
   game.endless = false; game.bossSpawned = false; game.boss = null; game.bossPhase = 1; // Boss阶段（1/2）
+  game.theme = 0; // 地图主题（0荒原/1森林/2熔岩）
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
@@ -3391,7 +3438,8 @@ function render() {
 
   // ---- 地面（2.5D等距网格滚动）----
   // 底色铺满屏幕
-  ctx.fillStyle = '#0e0b14'; ctx.fillRect(0, 0, W, H); // 焦黑底色
+  const mapTheme = MAP_THEMES[game.theme || 0] || MAP_THEMES[0];
+  ctx.fillStyle = mapTheme.base; ctx.fillRect(0, 0, W, H); // 主题底色
   // ---- 世界层：统一缩放变换（竖屏 ZOOM<1 = 视野拉远看更多地图）----
   ctx.save();
   ctx.translate(W / 2 - sx, H / 2 - sy);
@@ -3405,7 +3453,8 @@ function render() {
   for (let gx = startX; gx < player.x + halfW; gx += tw) {
     for (let gy = startY; gy < player.y + halfH; gy += th) {
       // A/B 两块砖奇偶交替，棋盘错开打破单一感
-      ctx.drawImage(((gx / tw + gy / th) & 1) ? groundTileB : groundTileA, gx, gy);
+      const tPair = groundTiles[game.theme || 0] || groundTiles[0];
+      ctx.drawImage(((gx / tw + gy / th) & 1) ? tPair[1] : tPair[0], gx, gy);
     }
   }
 
@@ -4019,6 +4068,17 @@ function loop(now) {
   game.bloodT = Math.max(0, game.bloodT - dt);
   game.achCd = (game.achCd || 0) - dt;
   if (game.achCd <= 0) { game.achCd = 5; checkAchievements('live'); } // 局中成就巡检
+  // —— 地图主题轮换：5分钟一换（血月荒原→腐化森林→熔岩地窟）——
+  const newTheme = Math.min(2, Math.floor(game.time / 300));
+  if (newTheme !== (game.theme || 0)) {
+    game.theme = newTheme;
+    const mt = MAP_THEMES[newTheme];
+    game.bannerText = mt.icon + ' ' + mt.name + ' · ' + mt.desc + ' ' + mt.icon;
+    game.bannerT = 3;
+    game.flashT = 0.5;
+    addParticles(player.x, player.y, '#ffffff', 18, 220);
+    LOG.info('地图主题切换：' + mt.name);
+  }
   // —— Boss 二阶段技能组（常驻推进，不依赖 Boss AI 分支）——
   for (const be of enemies) {
     if (be.dead || be.type !== 'boss') continue;
