@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.49</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.50</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -333,7 +333,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.49');
+LOG.info('游戏脚本加载完成 v0.50');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -411,6 +411,7 @@ const AudioSys = {
   // ---- BGM：合成器循环，三档紧张度随游戏时间切换 ----
   startBgm() {
     if (this.timer || !this.ctx) return;
+    if (this.ctx.state === 'suspended') { this.ctx.resume().then(() => this.startBgm()); return; } // 解除限制后再排程
     this.bgmNext = this.ctx.currentTime + 0.1;
     this.bgmStep = 0;
     this.timer = setInterval(() => this.scheduleBgm(), 120);
@@ -423,22 +424,36 @@ const AudioSys = {
       const stage = game.time < 180 ? 0 : (game.time < 480 ? 1 : 2); // 热身/怪海/地狱
       // Boss战检测：场上存活Boss/阶段小Boss → 切战斗曲（低八度重低音+半音压迫琶音+重鼓+提速）
       const bossActive = game.state === 'playing' && enemies.some(e => !e.dead && (e.type === 'boss' || e.miniBoss));
+      // —— 动态分层四层 ——
+      const menuMode = !['playing', 'paused', 'levelup', 'contract'].includes(game.state); // 场景层：菜单=舒缓
+      const blood = (game.bloodT || 0) > 0;                                              // 事件层：血月=红音加压
+      const lowHp = game.state === 'playing' && player.maxHp && player.hp / player.maxHp < 0.3; // 状态层：低血心跳
+      const themeArp = [[440, 523, 659, 784], [440, 494, 587, 659], [440, 466, 523, 587]][game.theme || 0]; // 主题层：荒原小调/森林多利亚/熔岩弗里几亚
       const bassSeq = bossActive ? [55, 55, 65.4, 55, 49, 49, 65.4, 82.4] : [110, 110, 130.8, 110, 98, 98, 130.8, 164.8]; // Boss低八度
       if (!this.muted) {
-        if (step % 2 === 0) this.tone(bassSeq[(step / 2) % 8], bossActive ? 0.3 : 0.22, 'triangle', bossActive ? 0.1 : 0.07, null, t);
-        if ((stage >= 1 || bossActive) && step % 2 === 1) this.noise(0.03, bossActive ? 0.03 : 0.018, bossActive ? 4500 : 6000, t); // 踩镲
-        if (step % 8 === 0) (bossActive ? [220, 261.6, 311.1] : [220, 261.6, 329.6]).forEach(f => this.tone(f, 1.6, 'sine', bossActive ? 0.035 : 0.026, null, t)); // Boss小二度暗和弦
-        if (bossActive && step % 2 === 0) {
-          const arp = [440, 466.2, 523.2, 466.2]; // Boss：半音压迫琶音
-          this.tone(arp[(step / 2) % 4], 0.11, 'square', 0.02, null, t);
-        } else if (stage >= 2 && step % 2 === 0) { // 地狱档：高音琶音加压
-          const arp = [440, 523, 659, 784];
-          this.tone(arp[(step / 2) % 4], 0.12, 'square', 0.016, null, t);
+        if (menuMode) { // 菜单：只留低音+慢和弦，安静等待
+          if (step % 4 === 0) this.tone(bassSeq[(step / 4) % 8], 0.5, 'triangle', 0.05, null, t);
+          if (step % 8 === 0) [220, 261.6, 329.6].forEach(f => this.tone(f, 2.2, 'sine', 0.02, null, t));
+        } else {
+          if (step % 2 === 0) this.tone(bassSeq[(step / 2) % 8], bossActive ? 0.3 : 0.22, 'triangle', bossActive ? 0.1 : 0.07, null, t);
+          if ((stage >= 1 || bossActive || blood) && step % 2 === 1) this.noise(0.03, bossActive ? 0.03 : 0.018, bossActive ? 4500 : 6000, t); // 踩镲
+          if (step % 8 === 0) (bossActive ? [220, 261.6, 311.1] : [220, 261.6, 329.6]).forEach(f => this.tone(f, 1.6, 'sine', bossActive ? 0.035 : 0.026, null, t)); // Boss小二度暗和弦
+          if (bossActive && step % 2 === 0) {
+            const arp = [440, 466.2, 523.2, 466.2]; // Boss：半音压迫琶音
+            this.tone(arp[(step / 2) % 4], 0.11, 'square', 0.02, null, t);
+          } else if ((stage >= 2 || blood) && step % 2 === 0) { // 地狱档/血月：琶音加压（跟主题音阶）
+            this.tone(themeArp[(step / 2) % 4], 0.12, 'square', 0.016, null, t);
+          }
+          if (bossActive && step % 8 === 4) this.noise(0.14, 0.09, 150, t); // Boss：重击鼓
+          if (blood && step % 8 === 2) this.tone(41.2, 0.5, 'sine', 0.05, null, t); // 血月：低音红脉冲
+          if (lowHp && step % 8 === 0) { // 低血量心跳（咚-咚双击）
+            this.tone(52, 0.18, 'sine', 0.09, null, t);
+            this.tone(50, 0.16, 'sine', 0.07, null, t + 0.28);
+          }
         }
-        if (bossActive && step % 8 === 4) this.noise(0.14, 0.09, 150, t); // Boss：重击鼓
       }
       this.bgmStep++;
-      this.bgmNext += bossActive ? 0.18 : 0.216; // Boss战提速 ≈166BPM
+      this.bgmNext += (bossActive ? 0.18 : 0.216) * (menuMode ? 1.6 : 1); // Boss提速≈166BPM；菜单放慢
     }
   },
   // 音量三档循环：0静音/1半音/2全开（记忆到存档）
@@ -4814,6 +4829,7 @@ function ensurePageBgs() {
 }
 function showMenu() {
   game.state = 'menu';
+  AudioSys.init(); AudioSys.startBgm(); // 菜单层 BGM（幂等，首次手势后生效）
   ensurePageBgs();
   renderDiffBtn();
   updateInstallBtn();
