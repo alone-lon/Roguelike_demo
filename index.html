@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.51</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.52</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -194,8 +194,17 @@
   <div class="stats" id="settleStats"></div>
   <div>
     <button class="btn green" id="endlessBtn">无 尽 继 续</button>
+    <button class="btn" id="shareBtn">📤 生 成 分 享 图</button>
     <button class="btn" id="againBtn">见好就收 / 再来一局</button>
   </div>
+</div>
+
+<!-- 分享图预览（手机长按保存 / 电脑右键另存） -->
+<div id="shareOverlay" class="overlay hidden" style="z-index:75;">
+  <div class="title" style="font-size:clamp(20px,5vw,34px)">📤 分 享 图</div>
+  <div class="subtitle">手机长按图片保存 · 电脑右键另存为</div>
+  <img id="shareImg" style="max-width:min(86vw,420px);border-radius:14px;border:1px solid #6b4a8a;" alt="分享图">
+  <div><button class="btn" id="shareClose">返 回</button></div>
 </div>
 
 <!-- 暂停面板（真暂停：游戏冻结，可继续/退出） -->
@@ -333,7 +342,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.51');
+LOG.info('游戏脚本加载完成 v0.52');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -3302,6 +3311,14 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
       <div style="height:7px;background:rgba(255,255,255,0.08);border-radius:4px;margin-top:2px;">
         <div style="height:7px;width:${Math.round(v / totDmg * 100)}%;background:linear-gradient(90deg,#8a5cff,#ffd77a);border-radius:4px;"></div>
       </div></div>`).join('');
+  game.settleData = { // 分享图数据（#9 直吃）
+    title: runTitle, charText: ch.icon + ch.name, diffBadge,
+    timeText: fmtTime(game.time), killsText: game.kills.toLocaleString(),
+    dmgText: Math.floor(game.damage).toLocaleString(), levelText: game.level,
+    bars: rows.slice(0, 3).map(([id, v]) => [srcName(id), Math.round(v / totDmg * 100)]),
+    rankText: myRank ? '🏅 本机榜第 ' + myRank + ' 名' : '',
+    date: new Date().toLocaleDateString('zh-CN'),
+  };
   document.getElementById('settleStats').innerHTML =
     `<div id="settleCard" style="background:linear-gradient(160deg,#2a2038,#1c1428);border:1px solid #6b4a8a;border-radius:14px;padding:14px 16px;text-align:left;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -4434,6 +4451,66 @@ document.getElementById('diffFlowBack').addEventListener('click', () => { // 返
   game.charFlow = false;
   openSlotPanel('new');
 });
+// —— 三期#9 分享图：结算数据卡 → 竖版战绩海报（离屏 canvas，长按保存）——
+function makeShareImage() {
+  const d = game.settleData || {};
+  const cv = document.createElement('canvas');
+  cv.width = 720; cv.height = 960;
+  const g = cv.getContext('2d');
+  // 背景渐变 + 边框
+  const bg = g.createLinearGradient(0, 0, 720, 960);
+  bg.addColorStop(0, '#2a2038'); bg.addColorStop(1, '#120c1e');
+  g.fillStyle = bg; g.fillRect(0, 0, 720, 960);
+  g.strokeStyle = '#6b4a8a'; g.lineWidth = 6; g.strokeRect(18, 18, 684, 924);
+  // 标题
+  g.textAlign = 'center';
+  g.fillStyle = '#ffd77a'; g.font = 'bold 64px GameSans, sans-serif';
+  g.fillText('暗黑幸存者', 360, 118);
+  g.fillStyle = '#b8a8c8'; g.font = '26px GameSans, sans-serif';
+  g.fillText('ROGUELIKE · 割草暗黑幻想', 360, 158);
+  // 称号 + 角色徽章
+  g.fillStyle = '#ffffff'; g.font = 'bold 52px GameSans, sans-serif';
+  g.fillText(d.title || '', 360, 252);
+  g.fillStyle = '#c9b8d8'; g.font = '28px GameSans, sans-serif';
+  g.fillText((d.charText || '') + ' · ' + (d.diffBadge || ''), 360, 298);
+  // 四维（2×2 网格）
+  const stats = [['存活', d.timeText], ['击杀', d.killsText], ['总伤害', d.dmgText], ['等级', d.levelText]];
+  stats.forEach(([k, v], i) => {
+    const x = 60 + (i % 2) * 310, y = 350 + Math.floor(i / 2) * 150;
+    g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(x, y, 290, 125);
+    g.fillStyle = '#ffffff'; g.font = 'bold 42px GameSans, sans-serif';
+    g.fillText(String(v === undefined ? '' : v), x + 145, y + 62);
+    g.fillStyle = '#b8a8c8'; g.font = '24px GameSans, sans-serif';
+    g.fillText(k, x + 145, y + 102);
+  });
+  // 伤害条形图
+  g.textAlign = 'left';
+  g.fillStyle = '#b8a8c8'; g.font = '24px GameSans, sans-serif';
+  g.fillText('—— 伤害构成 TOP3 ——', 60, 702);
+  (d.bars || []).forEach(([name, pct], i) => {
+    const y = 736 + i * 54;
+    g.fillStyle = '#dddddd'; g.font = '22px GameSans, sans-serif';
+    g.fillText(name + '  ' + pct + '%', 60, y);
+    g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(60, y + 8, 600, 12);
+    const lg = g.createLinearGradient(60, 0, 660, 0);
+    lg.addColorStop(0, '#8a5cff'); lg.addColorStop(1, '#ffd77a');
+    g.fillStyle = lg; g.fillRect(60, y + 8, 600 * pct / 100, 12);
+  });
+  // 底部：榜位 + 日期
+  g.textAlign = 'center';
+  g.fillStyle = '#c9b8d8'; g.font = '24px GameSans, sans-serif';
+  g.fillText(((d.rankText || '') + '　' + (d.date || '')).trim(), 360, 930);
+  document.getElementById('shareImg').src = cv.toDataURL('image/png');
+}
+document.getElementById('shareBtn').addEventListener('click', () => {
+  makeShareImage();
+  document.getElementById('shareOverlay').classList.remove('hidden');
+  LOG.info('生成分享图');
+});
+document.getElementById('shareClose').addEventListener('click', () => {
+  document.getElementById('shareOverlay').classList.add('hidden');
+});
+
 // —— 全球排行榜（Cloudflare Worker 后端；离线优先，3秒超时静默降级）——
 const LB_CONFIG = {
   endpoint: '', // ← 部署 leaderboard-worker 后填地址，如 'https://dark-survivor-lb.xxx.workers.dev'
