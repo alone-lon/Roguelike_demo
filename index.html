@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.50</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.51</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -333,7 +333,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.50');
+LOG.info('游戏脚本加载完成 v0.51');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -3282,15 +3282,38 @@ function endRun(victoryFlag, endlessQuit, quitReason) {
   const srcName = (id) => (WEAPON_DEFS[id] ? WEAPON_DEFS[id].name : { shot: '幽灵箭', minion: '召唤物', bomb: '炸弹', meteor: '陨石坑', blackhole: '黑洞', holyfire: '圣火', other: '其他' }[id] || id);
   const rows = Object.entries(game.dmgByWeapon || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const totDmg = rows.reduce((s, r) => s + r[1], 0) || 1;
-  const topHtml = rows.map(([id, v], i) =>
-    `<div style="margin:2px 0">${i + 1}. <b>${srcName(id)}</b> ${Math.floor(v).toLocaleString()}（${Math.round(v / totDmg * 100)}%）</div>`).join('');
   const killerLine = (game.killer && !victoryFlag)
     ? `<div style="margin-top:8px;color:#ff8896">💀 击杀你的怪物：<b>${game.killer.name}</b>${game.killer.atk ? '（' + game.killer.atk + '）' : ''}</div>` : '';
+  // —— v0.51 结算数据卡：称号 + 四维大数字 + 伤害条形图 + 本机榜位 ——
+  const runTitle =
+    victoryFlag ? '🏆 传说幸存者' :
+    game.time >= 900 ? '⏳ 不朽战神' :
+    game.kills >= 1000 ? '⚔ 千人斩' :
+    game.time >= 300 ? '🗡 身经百战' : '🌱 初出茅庐';
+  const diffBadge = game.dailyMode ? '📅 每日挑战' : ((save.settings.difficulty || 0) === 1 ? '🔥 地狱' : '🟢 普通');
+  const myScore = (victoryFlag ? 1000000 : 0) + Math.round(game.time);
+  const myRank = (save.leaderboard || []).findIndex(r => r.score === myScore) + 1;
+  const ch = CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter;
+  const statGrid = [['存活', fmtTime(game.time)], ['击杀', game.kills.toLocaleString()], ['总伤害', Math.floor(game.damage).toLocaleString()], ['等级', game.level]]
+    .map(([k, v]) => `<div style="flex:1;background:rgba(255,255,255,0.06);border-radius:9px;padding:7px 4px;text-align:center;">
+        <div style="font-size:16px;color:#fff;"><b>${v}</b></div><div style="font-size:11px;color:#b8a8c8;">${k}</div></div>`).join('');
+  const barHtml = rows.slice(0, 3).map(([id, v]) =>
+    `<div style="margin:4px 0;font-size:12px;"><b>${srcName(id)}</b> <span style="opacity:.75">${Math.round(v / totDmg * 100)}%</span>
+      <div style="height:7px;background:rgba(255,255,255,0.08);border-radius:4px;margin-top:2px;">
+        <div style="height:7px;width:${Math.round(v / totDmg * 100)}%;background:linear-gradient(90deg,#8a5cff,#ffd77a);border-radius:4px;"></div>
+      </div></div>`).join('');
   document.getElementById('settleStats').innerHTML =
-    `存活 <b>${fmtTime(game.time)}</b>　击杀 <b>${game.kills}</b>　总伤害 <b>${Math.floor(game.damage).toLocaleString()}</b><br>` +
-    `等级 <b>${game.level}</b>　金币 <b>${game.coins}</b>` + killerLine +
-    `<div style="margin-top:10px;opacity:0.92">—— 本次构建 ——<br><span style="font-size:0.82em">${ws.join('　') || '无'}</span><br><span style="font-size:0.82em;opacity:0.85">${ps.join('　') || '无'}</span></div>` +
-    `<div style="margin-top:10px;opacity:0.92">—— 伤害统计 TOP${rows.length} ——<br><span style="font-size:0.85em">${topHtml || '无'}</span></div>`;
+    `<div id="settleCard" style="background:linear-gradient(160deg,#2a2038,#1c1428);border:1px solid #6b4a8a;border-radius:14px;padding:14px 16px;text-align:left;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:19px;color:#ffd77a;">${runTitle}</div>
+        <div style="font-size:12px;color:#c9b8d8;">${ch.icon}${ch.name} · ${diffBadge}</div>
+      </div>
+      <div style="display:flex;gap:8px;margin:10px 0;">${statGrid}</div>
+      ${rows.length ? `<div style="font-size:12px;color:#b8a8c8;">—— 伤害构成 TOP${Math.min(3, rows.length)} ——</div>${barHtml}` : ''}
+      <div style="margin-top:8px;font-size:12px;color:#c9b8d8;">${myRank ? '🏅 本机榜第 <b>' + myRank + '</b> 名' : ''}　💰 金币 <b>${game.coins}</b></div>
+      ${killerLine}
+    </div>
+    <div style="margin-top:10px;opacity:0.92">—— 本次构建 ——<br><span style="font-size:0.82em">${ws.join('　') || '无'}</span><br><span style="font-size:0.82em;opacity:0.85">${ps.join('　') || '无'}</span></div>`;
   // 无尽继续按钮：仅通关时提供
   document.getElementById('endlessBtn').style.display = (victoryFlag && !endlessQuit) ? '' : 'none';
   document.getElementById('settle').classList.remove('hidden');
