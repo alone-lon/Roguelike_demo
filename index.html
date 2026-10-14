@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.46</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.47.1</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -328,7 +328,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.46');
+LOG.info('游戏脚本加载完成 v0.47.1');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -1218,6 +1218,18 @@ function drawMonster(x, y, scale, e) {
   // 脚下阴影
   ctx.fillStyle = 'rgba(0,0,0,0.30)';
   ctx.beginPath(); ctx.ellipse(x, y, 13 * s, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+  // 元素状态指示点（灼烧红/冰冻蓝/中毒绿/感电紫）
+  if (e.elems) {
+    const EC = { burn: '#ff7043', chill: '#7dd3fc', poison: '#7dff5a', shock: '#c084fc' };
+    let ei = 0;
+    for (const k in e.elems) {
+      if (e.elems[k] > 0) {
+        ctx.fillStyle = EC[k];
+        ctx.beginPath(); ctx.arc(x + (ei - 0.5) * 8 * s, y - 42 * s, 2.6, 0, Math.PI * 2); ctx.fill();
+        ei++;
+      }
+    }
+  }
 
   if (e.type === 'normal') {
     // 小史莱姆：果冻球弹跳（squash & stretch）
@@ -1643,21 +1655,24 @@ for (let ti = 0; ti < MAP_THEMES.length; ti++) renderGroundTilesFor(ti);
 // 预留：const AudioSys = { play(name){...} }
 
 // ============================== 玩家属性计算 ==============================
+// —— 契约乘区：recomputeStats 会重算全部面板，契约加成只能走乘区不能直改属性 ——
+function cMod() { return game.cMod || (game.cMod = { dmg: 1, speed: 1, hpMax: 1, cd: 1, gold: 1, xp: 1, killHeal: 0, dmgTaken: 1, enemySpd: 1 }); }
+
 function recomputeStats() {
   const p = player.passives, m = save.meta; // 局内被动 + 局外永久属性双层叠加
   const ov = game.overflowN || 0; // 超限强化层数：全满后无限成长（+4%伤/+2%速/+2%围）
   const ch = CHAR_DEFS[save.settings.charId] || CHAR_DEFS.hunter; // 角色专属加成
   const dm = dailyMod(); // 每日挑战规则修正
-  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov) * ch.dmg * ((dm === 'glass') ? 1.5 : 1);
+  player.dmgMult = (1 + 0.12 * (p.dmg || 0)) * (1 + 0.05 * (m.dmg || 0)) * (1 + 0.04 * ov) * ch.dmg * ((dm === 'glass') ? 1.5 : 1) * cMod().dmg;
   player.atkSpeedMult = (1 + 0.10 * (p.atkSpeed || 0)) * (1 + 0.02 * ov) * ch.atkSpeed;
   player.critChance = 0.22 + (ch.critBonus || 0); // 暴击率（刺客加成）
   player.critMult = ch.critMult || 1.8;           // 暴击倍率
   player.areaMult = (1 + 0.12 * (p.area || 0)) * (1 + 0.02 * ov);
-  player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0));
+  player.cdMult = Math.max(0.35, 1 - 0.08 * (p.cdr || 0) - 0.02 * (m.cdr || 0)) * cMod().cd;
   player.projSpeedMult = 1 + 0.12 * (p.projSpeed || 0);
-  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0)) * ch.speed * ((dm === 'swift') ? 1.3 : 1);
+  player.speed = CONFIG.playerSpeed * (1 + 0.08 * (p.moveSpeed || 0)) * (1 + 0.03 * (m.moveSpeed || 0)) * ch.speed * ((dm === 'swift') ? 1.3 : 1) * cMod().speed;
   player.pickup = 110 * (1 + 0.30 * (p.pickup || 0)) * (1 + 0.10 * (m.pickup || 0)) * (ch.pickupMult || 1);
-  const newMax = Math.round((CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0) + ch.hpBonus) * ((dm === 'glass') ? 0.5 : 1));
+  const newMax = Math.round((CONFIG.playerHp + 25 * (p.hp || 0) + 15 * (m.hp || 0) + ch.hpBonus) * ((dm === 'glass') ? 0.5 : 1) * cMod().hpMax);
   if (newMax > player.maxHp) player.hp += newMax - player.maxHp; // 加上限时补差值
   player.maxHp = newMax;
   player.hp = Math.min(player.hp, player.maxHp); // 血巫师负加成防溢出
@@ -1734,7 +1749,7 @@ function spawnEnemy(type, x, y, noAffix) {
   enemies.push({
     type, x, y, r: d.r * (af === 'bulky' ? 1.25 : 1), hp: d.hp * hm * (af === 'bulky' ? 2.5 : 1),
     maxHp: d.hp * hm * (af === 'bulky' ? 2.5 : 1),
-    speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08) * (af === 'swift' ? 1.5 : 1) * (dailyMod() === 'swift' ? 1.2 : 1) * (player.enemySpdMult || 1),
+    speed: d.speed * (type === 'gold' ? 1 : 1) * rand(0.92, 1.08) * (af === 'swift' ? 1.5 : 1) * (dailyMod() === 'swift' ? 1.2 : 1) * cMod().enemySpd,
     dmg: d.dmg * dmgMult() * (af === 'bulky' ? 1.4 : 1),
     xp: Math.round(d.xp * (af === 'bulky' ? 2 : af === 'summoner' ? 1.8 : af === 'split' ? 1.5 : af === 'swift' ? 1.3 : 1)),
     scale: d.scale * (af === 'bulky' ? 1.2 : 1), body: d.body, head: d.head, horns: d.horns, miniBoss: d.miniBoss,
@@ -2553,6 +2568,37 @@ function updateSummons(dt) {
 }
 
 // ============================== 伤害与击杀 ==============================
+// —— 三期#5 元素反应：四元素状态 + 六种两两连锁 ——
+const ELEM_BY_SRC = { meteor: 'burn', rocket: 'burn', holyfire: 'burn', nova: 'chill', poison: 'poison', wither: 'poison', storm: 'shock', chain: 'shock' };
+function applyElem(e, srcKey) {
+  const t = ELEM_BY_SRC[srcKey];
+  if (!t) return;
+  e.elems = e.elems || {};
+  e.elems[t] = Math.max(e.elems[t] || 0, 4); // 元素附着持续 4 秒
+  tryReact(e);
+}
+// 两两元素连锁（融化/爆燃/超导/瘟疫电链/烈焰过载/冻毒）
+function tryReact(e) {
+  if ((e.reactionCd || 0) > 0) return;
+  const el = e.elems || {};
+  const has = (k) => (el[k] || 0) > 0;
+  const A = weaponDmg(5, 3); // 连锁伤害基准：中等武器伤害（随成长缩放）
+  let rm = null;
+  if (has('burn') && has('chill')) rm = { name: '融化', color: '#ffb347', dmg: A * 2.5, consume: ['burn', 'chill'], fx: () => { e.slowT = Math.max(e.slowT || 0, 0.6); } };
+  else if (has('burn') && has('poison')) rm = { name: '爆燃', color: '#ff7043', dmg: A * 1.8, consume: ['burn', 'poison'], fx: () => { const t2 = enemies.filter(o => o !== e && !o.dead && dist2(o, e) < 160 * 160)[0]; if (t2) { t2.elems = t2.elems || {}; t2.elems.poison = 3; addParticles(t2.x, t2.y - 12, '#7dff5a', 6, 90); } } };
+  else if (has('chill') && has('shock')) rm = { name: '超导', color: '#7dd3fc', dmg: A * 1.2, consume: ['chill', 'shock'], fx: () => { for (const o of enemies) if (!o.dead && dist2(o, e) < 150 * 150) o.slowT = Math.max(o.slowT || 0, 2); } };
+  else if (has('poison') && has('shock')) rm = { name: '瘟疫电链', color: '#b07dff', dmg: A * 1.5, consume: ['poison', 'shock'], fx: () => { let n = 0; for (const o of enemies) { if (n >= 3) break; if (o !== e && !o.dead && dist2(o, e) < 150 * 150) { damageEnemy(o, A * 0.8, 'react'); n++; } } } };
+  else if (has('burn') && has('shock')) rm = { name: '烈焰过载', color: '#ffae42', dmg: A * 2.0, consume: ['burn', 'shock'], fx: () => { e.x += (e.x - player.x) * 0.12; e.y += (e.y - player.y) * 0.12; addParticles(e.x, e.y - 12, '#ffae42', 10, 160); } };
+  else if (has('chill') && has('poison')) rm = { name: '冻毒', color: '#9ae6ff', dmg: A * 1.0, consume: ['chill', 'poison'], fx: () => { e.frozenT = 1; } };
+  if (!rm) return;
+  e.reactionCd = 1.5; // 同一敌人连锁冷却防刷屏
+  rm.consume.forEach(k => el[k] = 0);
+  damageEnemy(e, rm.dmg, 'react');
+  addDmgText(e.x, e.y - 46, '⚡' + rm.name, rm.color, 16);
+  addParticles(e.x, e.y - 12, rm.color, 8, 140);
+  rm.fx();
+}
+
 function damageEnemy(e, dmg, src) {
   if (e.dead) return;
   if (e.invulnT > 0) return; // 二阶段转场无敌期
@@ -2566,6 +2612,7 @@ function damageEnemy(e, dmg, src) {
   // 伤害归因：结算构建展示"哪把武器伤害最高"用
   const srcKey = src || game.curSrc || 'other';
   game.dmgByWeapon[srcKey] = (game.dmgByWeapon[srcKey] || 0) + finalDmg;
+  applyElem(e, srcKey); // 元素附着 + 连锁检查（按伤害来源武器定元素）
   // 方案A 生命汲取：伤害的0.5%/级转生命（与DPS同步成长，天然平衡）
   const steal = finalDmg * 0.005 * (player.passives.lifesteal || 0);
   if (steal > 0) {
@@ -2602,6 +2649,7 @@ function damageEnemy(e, dmg, src) {
 function killEnemy(e) {
   e.dead = true;
   game.kills++;
+  if (cMod().killHeal > 0) player.hp = Math.min(player.maxHp, player.hp + cMod().killHeal); // 血契约：击杀回血
   // 连杀系统：持续击杀累积连杀数，屏幕中央跳大字
   game.combo++; game.comboT = 2.5; game.comboScale = 1;
   if (game.combo >= 100) unlockAchievement('combo_100'); // 百杀连击
@@ -2673,7 +2721,7 @@ function enemyDisplayName(e) {
 
 function damagePlayer(dmg, attacker, atkName) {
   if (player.iframe > 0 || game.state !== 'playing') return;
-  dmg = Math.round(dmg * (player.dmgTakenMult || 1)); // 诅咒契约：受到伤害倍率
+  dmg = Math.round(dmg * cMod().dmgTaken); // 诅咒契约：受到伤害倍率
   player.hp -= dmg;
   player.iframe = CONFIG.iframe;
   // 荆棘光环反伤：攻击者挨刺（进化：荆棘领域翻倍）
@@ -2703,7 +2751,7 @@ function damagePlayer(dmg, attacker, atkName) {
 // ============================== 经验与升级 ==============================
 function addXp(v) {
   v = Math.round(v * (1 + 0.08 * (save.meta.xpBonus || 0))); // 局外经验加成
-  game.xp += v;
+  game.xp += v * cMod().xp; // 契约经验倍率
   while (game.xp >= game.xpNeed) {
     game.xp -= game.xpNeed;
     game.level++;
@@ -2954,7 +3002,7 @@ function updateDrops(dt) {
         addDmgText(player.x, player.y - 40, '轰！500伤害', '#ffd77a', 22);
       }
       else if (d.type === 'chest') { addDmgText(player.x, player.y - 40, '宝箱：直接升级！', '#ffd77a', 20); AudioSys.play('chest'); game.pendingLevels++; if (game.state === 'playing') openLevelUp(); }
-      else if (d.type === 'coin') { game.coins += 1; game.coinPulse = 1; addParticles(d.x, d.y, '#ffd77a', 4, 120); AudioSys.play('coin'); } // 金币拾取闪光+音
+      else if (d.type === 'coin') { game.coins += cMod().gold; game.coinPulse = 1; addParticles(d.x, d.y, '#ffd77a', 4, 120); AudioSys.play('coin'); } // 金币拾取闪光+音
     }
   }
 }
@@ -2966,6 +3014,8 @@ function updateEnemies(dt) {
     // 减速计时
     const slow = e.frozenT > 0 ? 0.12 : (e.slowT > 0 ? 0.55 : 1); // 冻结几乎定身
     e.slowT -= dt; e.frozenT = Math.max(0, (e.frozenT || 0) - dt);
+    if (e.elems) for (const k in e.elems) if (e.elems[k] > 0) e.elems[k] -= dt; // 元素附着衰减
+    if (e.reactionCd > 0) e.reactionCd -= dt; // 连锁冷却衰减
     e.flash -= dt;
     for (const k in e.hitT) e.hitT[k] -= dt;
 
@@ -3111,7 +3161,7 @@ function startGame() {
   game.endless = false; game.bossSpawned = false; game.boss = null; game.bossPhase = 1; // Boss阶段（1/2）
   game.theme = 0; // 地图主题（0荒原/1森林/2熔岩）
   game.nextContractT = 150; game.contractOffers = 0; game.contractsTaken = 0; // 诅咒契约计时
-  player.dmgTakenMult = 1; player.enemySpdMult = 1; // 契约倍率复位（旧档无此字段=1）
+  game.cMod = { dmg: 1, speed: 1, hpMax: 1, cd: 1, gold: 1, xp: 1, killHeal: 0, dmgTaken: 1, enemySpd: 1 }; // 契约乘区复位
   game.shakeT = 0; game.flashT = 0;
   game.combo = 0; game.comboT = 0; game.comboScale = 0; game.coinPulse = 0;
   game.pendingLevels = 0; game.healAcc = 0; game.healTextCd = 0; game.revives = 0;
@@ -3286,7 +3336,7 @@ function saveRunToSlot(n) {
   const snap = {
     v: 1,
     date: (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'),
-    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], overflowN: game.overflowN, dmgByWeapon: game.dmgByWeapon, nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage },
+    game: { time: game.time, kills: game.kills, damage: game.damage, level: game.level, xp: game.xp, xpNeed: game.xpNeed, endless: game.endless, bossSpawned: game.bossSpawned, revives: game.revives, rerolls: game.rerolls, banishes: game.banishes, banList: [...game.banList], overflowN: game.overflowN, dmgByWeapon: game.dmgByWeapon, nextBloodmoon: game.nextBloodmoon, bloodmoonCount: game.bloodmoonCount, mbStage: game.mbStage, cMod: game.cMod || null },
     player: {
       hp: player.hp,
       weapons: Object.fromEntries(Object.entries(player.weapons).map(([id, w]) => [id, { level: w.level, evolved: w.evolved }])),
@@ -3306,6 +3356,7 @@ function loadRunFromSlot(n) {
   game.endless = s.game.endless; game.bossSpawned = s.game.bossSpawned; game.revives = s.game.revives || 0;
   game.rerolls = s.game.rerolls ?? 3; game.banishes = s.game.banishes ?? 2; game.banList = s.game.banList || []; game.overflowN = s.game.overflowN || 0; game.dmgByWeapon = s.game.dmgByWeapon || {};
   game.nextBloodmoon = s.game.nextBloodmoon || 180; game.bloodmoonCount = s.game.bloodmoonCount || 0; game.mbStage = s.game.mbStage || 0;
+  if (s.game.cMod) game.cMod = s.game.cMod; // 契约乘区随档恢复
   player.weapons = {};
   for (const id in s.player.weapons) {
     giveWeapon(id);
@@ -3323,17 +3374,17 @@ function loadRunFromSlot(n) {
 // —— 三期#4 诅咒契约：贪念之神的交易（2选1 或拒绝，风险换收益）——
 const CONTRACTS = [
   { id: 'blood', icon: '⚔️', name: '嗜血契约', buff: '伤害 ×1.35', curse: '生命上限 −25%',
-    apply() { player.atk = Math.round(player.atk * 1.35); player.maxHp = Math.round(player.maxHp * 0.75); player.hp = Math.min(player.hp, player.maxHp); } },
+    apply() { cMod().dmg *= 1.35; cMod().hpMax *= 0.75; recomputeStats(); player.hp = Math.min(player.hp, player.maxHp); } },
   { id: 'greed', icon: '💰', name: '贪婪契约', buff: '金币获取 ×2', curse: '敌人移速 +20%',
-    apply() { player.goldGain *= 2; player.enemySpdMult = (player.enemySpdMult || 1) * 1.2; } },
-  { id: 'wind', icon: '💨', name: '疾风契约', buff: '移速 +25%', curse: '防御 −3',
-    apply() { player.speed = Math.round(player.speed * 1.25); player.armor = Math.max(0, player.armor - 3); } },
-  { id: 'glass', icon: '💎', name: '玻璃大炮', buff: '攻击 ×1.6', curse: '受到伤害 ×1.5',
-    apply() { player.atk = Math.round(player.atk * 1.6); player.dmgTakenMult = (player.dmgTakenMult || 1) * 1.5; } },
-  { id: 'leech', icon: '🩸', name: '血之契约', buff: '吸血 +5%', curse: '经验获取 −20%',
-    apply() { player.lifesteal += 0.05; player.xpGain *= 0.8; } },
+    apply() { cMod().gold *= 2; cMod().enemySpd *= 1.2; } },
+  { id: 'wind', icon: '💨', name: '疾风契约', buff: '移速 +25%', curse: '受到伤害 +15%',
+    apply() { cMod().speed *= 1.25; cMod().dmgTaken *= 1.15; recomputeStats(); } },
+  { id: 'glass', icon: '💎', name: '玻璃大炮', buff: '伤害 ×1.6', curse: '受到伤害 ×1.5',
+    apply() { cMod().dmg *= 1.6; cMod().dmgTaken *= 1.5; recomputeStats(); } },
+  { id: 'leech', icon: '🩸', name: '血之契约', buff: '击杀回复 6 生命', curse: '经验获取 −20%',
+    apply() { cMod().killHeal += 6; cMod().xp *= 0.8; } },
   { id: 'swift', icon: '⏱', name: '迅捷契约', buff: '技能冷却 ×0.8', curse: '生命上限 −15%',
-    apply() { player.cd *= 0.8; player.maxHp = Math.round(player.maxHp * 0.85); player.hp = Math.min(player.hp, player.maxHp); } },
+    apply() { cMod().cd *= 0.8; cMod().hpMax *= 0.85; recomputeStats(); player.hp = Math.min(player.hp, player.maxHp); } },
 ];
 function openContractPanel() {
   const picks = [...CONTRACTS].sort(() => Math.random() - 0.5).slice(0, 2); // 随机抽两份
