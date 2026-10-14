@@ -165,7 +165,7 @@
 <div id="menu" class="overlay">
   <img class="pageBg" data-src="menu-bg.webp" alt="">
   <img class="title-img" id="menuTitleImg" alt="暗黑幸存者">
-  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.45.1</b></div>
+  <div class="subtitle">类吸血鬼幸存者 · 2.5D Q版割草 · 简单但爽　<b style="color:#ffd77a">v0.45.2</b></div>
   <button class="btn" id="startBtn">开 始 游 戏</button>
   <button class="btn sub" id="rankBtn">📊 排 行 榜</button>
   <button class="btn sub" id="achBtn">🏆 成 就</button>
@@ -328,7 +328,7 @@ try {
 } catch (e) { /* 忽略 */ }
 window.addEventListener('error', e => LOG.error(`JS报错: ${e.message} @${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => LOG.error(`Promise报错: ${e.reason}`));
-LOG.info('游戏脚本加载完成 v0.45.1');
+LOG.info('游戏脚本加载完成 v0.45.2');
 
 // ============================== 音效系统（Web Audio 程序合成） ==============================
 // 零资源文件：振荡器+噪声全合成，单HTML体积不涨。浏览器自动播放策略：必须在用户手势里 init()
@@ -3317,6 +3317,31 @@ function loadRunFromSlot(n) {
   LOG.info('读取槽位' + n + '继续冒险（存档已销毁）');
 }
 
+// —— 删档二次确认弹层（JS 动态构建，防误删）——
+function askDeleteSlot(n, refresh) {
+  const s = readRunSlot(n);
+  if (!s) return;
+  const overlay = document.createElement('div'); // 遮罩
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(5,3,10,0.8);z-index:70;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#241f2e;border:1px solid #6b4a8a;border-radius:14px;padding:22px 26px;width:320px;max-width:86vw;text-align:center;">
+      <div style="font-size:20px;color:#ffd77a;margin-bottom:8px;">⚠️ 删除存档确认</div>
+      <div style="font-size:14px;color:#c9c2d8;line-height:1.7;margin-bottom:6px;">槽位 ${n} · Lv ${s.game.level} · ${fmtTime(s.game.time)}<br>删除后<strong style="color:#ff8a8a">不可恢复</strong>，确定删除？</div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;">
+        <button id="slotDelCancel" style="flex:1;padding:10px;border-radius:8px;border:none;background:#3a3350;color:#ddd;cursor:pointer;font-size:15px;">取消</button>
+        <button id="slotDelOk" style="flex:1;padding:10px;border-radius:8px;border:none;background:#c0392b;color:#fff;cursor:pointer;font-size:15px;">🗑 确认删除</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#slotDelCancel').addEventListener('click', () => { overlay.remove(); LOG.info('取消删除存档'); });
+  overlay.querySelector('#slotDelOk').addEventListener('click', () => { // 第二次点击才真删
+    localStorage.removeItem(RUN_SLOT_PREFIX + n);
+    overlay.remove();
+    LOG.info('存档已删除：槽位 ' + n + '（用户主动删除）');
+    if (refresh) refresh(); // 刷新槽位卡片
+  });
+}
+
 function openSlotPanel(mode) {
   // mode: 'new' 开始游戏选槽 | 'save' 保存并退出 | 'load' 读取继续
   const box = document.getElementById('slotCards');
@@ -3335,6 +3360,18 @@ function openSlotPanel(mode) {
       div.innerHTML = `<div class="icon">💾</div><div class="name">槽位 ${n}</div>` +
         `<div class="desc">Lv ${s.game.level}　${fmtTime(s.game.time)}<br>${s.date}</div>` +
         `<div class="tag">${mode === 'new' ? '点击继续' : mode === 'save' ? '点击覆盖保存' : '点击读取'}</div>`;
+      if (mode !== 'save') { // 右上角删除按钮（保存模式不给删，防误触）
+        div.style.position = 'relative';
+        const del = document.createElement('div');
+        del.className = 'delBtn';
+        del.textContent = '🗑';
+        del.style.cssText = 'position:absolute;top:6px;right:8px;width:26px;height:26px;border-radius:7px;background:rgba(192,57,43,0.85);color:#fff;font-size:13px;line-height:26px;text-align:center;cursor:pointer;z-index:2;';
+        del.addEventListener('click', (ev) => {
+          ev.stopPropagation(); // 不触发卡片的选中/读档
+          askDeleteSlot(n, () => openSlotPanel(mode));
+        });
+        div.appendChild(del);
+      }
     } else {
       div.innerHTML = `<div class="icon">📭</div><div class="name">槽位 ${n}</div><div class="desc">空槽位</div>` +
         `<div class="tag">${mode === 'new' ? '点击新开局' : mode === 'save' ? '点击保存' : '无存档'}</div>`;
